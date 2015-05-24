@@ -11,16 +11,23 @@
 #include "xml_utils.h"
 
 #include <mrpt/opengl/COpenGLScene.h>
-#include <mrpt/slam/CSimplePointsMap.h>
 #include <mrpt/poses/CPose2D.h>
 #include <mrpt/utils/CFileGZInputStream.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/utils/CObject.h>
 #include <rapidxml.hpp>
 
+#include <mrpt/version.h>
+#if MRPT_VERSION>=0x130
+#	include <mrpt/maps/CSimplePointsMap.h>
+	using mrpt::maps::CSimplePointsMap;
+#else
+#	include <mrpt/slam/CSimplePointsMap.h>
+	using mrpt::slam::CSimplePointsMap;
+#endif
+
 using namespace rapidxml;
 using namespace mvsim;
-using namespace mrpt::slam;
 using namespace std;
 
 
@@ -170,9 +177,9 @@ void OccupancyGridMap::simul_pre_timestep(const TSimulContext &context)
 		{
 			// 1) Simulate scan to get obstacles around the vehicle:
 			TInfoPerCollidableobj &ipv = m_obstacles_for_each_obj[obj_idx];
-			mrpt::slam::CObservation2DRangeScanPtr &scan = ipv.scan;
+			CObservation2DRangeScanPtr &scan = ipv.scan;
 			// Upon first time, reserve mem:
-			if (!scan) scan = mrpt::slam::CObservation2DRangeScan::Create();
+			if (!scan) scan = CObservation2DRangeScan::Create();
 
 			const float veh_max_obstacles_ranges = ipv.max_obstacles_ranges;
 			const float occup_threshold = 0.5f;
@@ -230,7 +237,7 @@ void OccupancyGridMap::simul_pre_timestep(const TSimulContext &context)
 			fixtureDef.friction = m_lateral_friction; // 0.5f;
 
 			// Create fixtures at their place (or disable it if no obstacle has been sensed):
-			const mrpt::slam::CSinCosLookUpTableFor2DScans::TSinCosValues & sincos_tab = m_sincos_lut.getSinCosForScan(*scan);
+			const CSinCosLookUpTableFor2DScans::TSinCosValues & sincos_tab = m_sincos_lut.getSinCosForScan(*scan);
 			ipv.collide_fixtures.resize(nRays);
 			for (size_t k=0;k<nRays;k++)
 			{
