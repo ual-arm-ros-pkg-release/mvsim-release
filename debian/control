@@ -1,0 +1,12 @@
+Source: ros-kinetic-mvsim
+Section: misc
+Priority: extra
+Maintainer: Jose-Luis Blanco-Claraco <jlblanco@ual.es>
+Build-Depends: debhelper (>= 9.0.0), libmrpt-dev, ros-kinetic-catkin, ros-kinetic-dynamic-reconfigure, ros-kinetic-mrpt-bridge, ros-kinetic-nav-msgs, ros-kinetic-roscpp, ros-kinetic-sensor-msgs, ros-kinetic-std-msgs, ros-kinetic-visualization-msgs
+Homepage: http://wiki.ros.org/mvsim
+Standards-Version: 3.9.2
+
+Package: ros-kinetic-mvsim
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libmrpt-dev, ros-kinetic-dynamic-reconfigure, ros-kinetic-message-runtime, ros-kinetic-mrpt-bridge, ros-kinetic-nav-msgs, ros-kinetic-roscpp, ros-kinetic-sensor-msgs, ros-kinetic-std-msgs, ros-kinetic-visualization-msgs
+Description: Node for the &quot;multivehicle simulator&quot; framework.
