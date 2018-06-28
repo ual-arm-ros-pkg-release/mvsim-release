@@ -6,14 +6,20 @@
 # | Copyright (C) 2014  Jose Luis Blanco Claraco (University of Almeria)    |
 # | Distributed under GNU General Public License version 3                  |
 # |   See <http://www.gnu.org/licenses/>                                    |
-# +-------------------------------------------------------------------------+ 
+# +-------------------------------------------------------------------------+
 
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.1)
 SET(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS 1)
 PROJECT(mvsim)  # Must match the ROS package name.
+set (CMAKE_CXX_STANDARD 14)
+
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
 
 if(COMMAND cmake_policy)
       cmake_policy(SET CMP0003 NEW)
+      if(POLICY CMP0048)
+      	cmake_policy(SET CMP0048 OLD)  # project version
+      endif()
 endif()
 
 # ------------------------------------------------------------------
@@ -23,16 +29,17 @@ endif()
 #  1) Standalone lib+app
 #  2) ROS node(s)
 #  3) MOOS module for OpenMORA
-# Depending on what packages are found, this script will instruct 
+# Depending on what packages are found, this script will instruct
 # CMake to configure the project accordingly.
 # ------------------------------------------------------------------
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin 
-	QUIET  # **IMPORTANT**: Notice the "QUIET" instead of the usual "REQUIRED". It's not a mistake.
-	COMPONENTS 
+find_package(catkin
+#        REQUIRED  # mvsim can be built with or without ROS, as an standalong lib
+	QUIET
+	COMPONENTS
 	roscpp tf mrpt_bridge dynamic_reconfigure std_msgs nav_msgs sensor_msgs visualization_msgs dynamic_reconfigure message_generation
 	)
 
@@ -65,27 +72,33 @@ ENDIF()
 # --------------------------
 IF(MSVC)
 	# Warnings level
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3") 
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3")
 	# Force usage of UNICODE projects, which is not the default in MSVC:
 	add_definitions(-DUNICODE -D_UNICODE)
 ENDIF()
 
-IF(CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-	# Warnings level
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -Wno-strict-aliasing -Wno-unused-local-typedefs")
-	# Set optimized building:
-	IF(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
-		SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
-	ENDIF()
-ENDIF()
+if (CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+	# High level of warnings.
+	# The -Wno-long-long is required in 64bit systems when including sytem headers.
+	# The -Wno-variadic-macros was needed for Eigen3, StdVector.h
+	add_compile_options(-Wall -Wno-long-long -Wno-variadic-macros)
+	# Workaround: Eigen <3.4 produces *tons* of warnings in GCC >=6. See http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1221
+	if (NOT ${CMAKE_CXX_COMPILER_VERSION} LESS "6.0")
+		add_compile_options(-Wno-ignored-attributes -Wno-int-in-bool-context)
+	endif()
+  # Set optimized building:
+endif()
 
+IF(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
+  add_compile_options(-O3)
+ENDIF()
 
 set(EXTERNALS_DIR "${PROJECT_SOURCE_DIR}/externals/")
 
 # --------------------------
 # Dependency: MRPT
 # --------------------------
-FIND_PACKAGE( MRPT REQUIRED COMPONENTS base opengl obs maps gui scanmatching)
+FIND_PACKAGE( MRPT REQUIRED COMPONENTS opengl obs maps gui tfest)
 # Defines: MRPT_LIBS -> libs to link against
 
 # --------------------------
@@ -96,12 +109,12 @@ SET(EMBEDDED_Box2D_DIR "${${PROJECT_NAME}_BINARY_DIR}/externals/Box2D/Box2D")
 # 1st) Try to locate it via CMake (installed in the system or precompiled somewhere)
 SET(Box2D_DIR "${EMBEDDED_Box2D_DIR}" CACHE PATH "Path to Box2D CMake config file" FORCE)
 FIND_PACKAGE(Box2D QUIET) # Quiet in a 1st try...
-# Defines: 
+# Defines:
 
 IF (NOT Box2D_FOUND OR "${Box2D_DIR}" STREQUAL "${EMBEDDED_Box2D_DIR}")
 	# Use embedded version:
 	# Override some defaults in the embedded project:
-	set(BOX2D_INSTALL ON CACHE BOOL "Install Box2D libs, includes, and CMake scripts" FORCE) # IMPORTANT: This must be ON to enable parsing Box2D's .cmake.in file!!	
+	set(BOX2D_INSTALL ON CACHE BOOL "Install Box2D libs, includes, and CMake scripts" FORCE) # IMPORTANT: This must be ON to enable parsing Box2D's .cmake.in file!!
 	option(BOX2D_INSTALL_DOC "Install Box2D documentation" OFF)
 	option(BOX2D_BUILD_SHARED "Build Box2D shared libraries" OFF)
 	option(BOX2D_BUILD_STATIC "Build Box2D static libraries" ON)
@@ -118,10 +131,10 @@ IF (NOT Box2D_FOUND OR "${Box2D_DIR}" STREQUAL "${EMBEDDED_Box2D_DIR}")
 	MESSAGE(STATUS "INFO: Box2D library not found in the system. Using embedded copy.")
 	SET(Box2D_DIR "${EMBEDDED_Box2D_DIR}" CACHE PATH "Path to Box2D CMake config file" FORCE)
 	FIND_PACKAGE(Box2D REQUIRED)
-	
+
 	# It seems BOX2D doesn't return the correct #include dir (???):
 	SET(BOX2D_INCLUDE_DIR "${${PROJECT_NAME}_SOURCE_DIR}/externals/Box2D/")
-	
+
 ENDIF()
 
 IF (Box2D_FOUND)
@@ -129,10 +142,6 @@ IF (Box2D_FOUND)
 	IF (NOT "" STREQUAL "${BOX2D_INCLUDE_DIR}")
 		INCLUDE_DIRECTORIES("${BOX2D_INCLUDE_DIR}")
 	ENDIF (NOT "" STREQUAL "${BOX2D_INCLUDE_DIR}")
-
-	IF (NOT "" STREQUAL "${BOX2D_LIBRARY_DIRS}")
-		LINK_DIRECTORIES("${BOX2D_LIBRARY_DIRS}")
-	ENDIF (NOT "" STREQUAL "${BOX2D_LIBRARY_DIRS}")
 
 	# It seems this var is not always set (!?)
 	IF ("" STREQUAL "${BOX2D_LIBRARIES}")
@@ -149,7 +158,7 @@ INCLUDE_DIRECTORIES("${EXTERNALS_DIR}/rapidxml")
 
 
 # --------------------------
-#       The Library 
+#       The Library
 # --------------------------
 INCLUDE_DIRECTORIES("${${PROJECT_NAME}_SOURCE_DIR}/libmvsim/include/")
 
@@ -209,7 +218,8 @@ IF (BUILD_FOR_ROS)
 	## DEPENDS: system dependencies of this project that dependent projects also need
 
 	catkin_package(
-	  CATKIN_DEPENDS dynamic_reconfigure message_runtime roscpp std_msgs
+	  CATKIN_DEPENDS
+			dynamic_reconfigure message_runtime nav_msgs roscpp std_msgs sensor_msgs visualization_msgs
 	#  INCLUDE_DIRS include
 	#  LIBRARIES mrpt_localization
 	#  DEPENDS mrpt
@@ -229,7 +239,7 @@ IF (BUILD_FOR_ROS)
 	###########
 
 	## Declare a cpp executable
-	add_executable(mvsim_node 
+	add_executable(mvsim_node
 	    mvsim_node_src/mvsim_node.cpp
 	    mvsim_node_src/mvsim_node_main.cpp
 	)
@@ -240,7 +250,7 @@ IF (BUILD_FOR_ROS)
 	add_dependencies(mvsim_node
 		mvsim_gencfg
 		mvsim # the simulator lib
-		) 
+		)
 
 	# make sure configure headers are built before any node using them
 	IF (${PROJECT_NAME}_EXPORTED_TARGETS})
@@ -248,11 +258,12 @@ IF (BUILD_FOR_ROS)
 	ENDIF()
 
 	## Specify libraries to link a library or executable target against
-	target_link_libraries(mvsim_node
-		mvsim  # the simulator lib
-		${BOX2D_LIBRARIES}  # Box2D libs
+        target_link_libraries(
+                mvsim_node
+                mvsim  # the simulator lib
+                ${BOX2D_LIBRARIES}  # Box2D libs
 		${MRPT_LIBS}
-		${catkin_LIBRARIES}
+                ${catkin_LIBRARIES}
 		)
 
 	#############
@@ -270,7 +281,7 @@ IF (BUILD_FOR_ROS)
 	# )
 
 	# Mark executables and/or libraries for installation
-	install(TARGETS mvsim_node 
+	install(TARGETS mvsim_node
 	  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 	  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 	  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
@@ -296,5 +307,4 @@ ENDIF() # BUILD_FOR_ROS
 #                                MOOS/OpenMORA SEGMENT
 # -----------------------------------------------------------------------------
 #IF(xxx)
-#ENDIF() # 
-
+#ENDIF() #
