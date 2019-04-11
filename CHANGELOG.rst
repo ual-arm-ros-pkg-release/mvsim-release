@@ -2,6 +2,12 @@
 Changelog for package mvsim
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.2.1 (2019-04-12)
+------------------
+* Fix build against latest mrpt-master & 1.5.x versions.
+* add ROS build farm badges
+* Contributors: Jose Luis Blanco Claraco, Jose Luis Blanco-Claraco, Julian Lopez Velasquez
+
 0.2.0 (2018-06-28)
 ------------------
 * fix build against mrpt1
