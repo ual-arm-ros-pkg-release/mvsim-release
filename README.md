@@ -1,3 +1,26 @@
+## mvsim (kinetic) - 0.2.1-0
+
+The packages in the `mvsim` repository were released into the `kinetic` distro by running `/usr/bin/bloom-release mvsim --rosdistro kinetic -y` on `Thu, 11 Apr 2019 23:40:51 -0000`
+
+The `mvsim` package was released.
+
+Version of package(s) in repository `mvsim`:
+
+- upstream repository: https://github.com/ual-arm-ros-pkg/mvsim.git
+- release repository: https://github.com/ual-arm-ros-pkg-release/mvsim-release.git
+- rosdistro version: `0.2.0-0`
+- old version: `0.2.0-0`
+- new version: `0.2.1-0`
+
+Versions of tools used:
+
+- bloom version: `0.7.2`
+- catkin_pkg version: `0.4.10`
+- rosdep version: `0.15.1`
+- rosdistro version: `0.7.2`
+- vcstools version: `0.1.40`
+
+
 ## mvsim (melodic) - 0.2.1-0
 
 The packages in the `mvsim` repository were released into the `melodic` distro by running `/usr/bin/bloom-release mvsim --rosdistro melodic` on `Thu, 11 Apr 2019 23:34:50 -0000`
