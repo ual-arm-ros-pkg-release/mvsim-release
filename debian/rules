@@ -1,61 +1,43 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
-# Sample debian/rules that uses debhelper.
-# This file was originally written by Joey Hess and Craig Small.
-# As a special exception, when this file is copied by dh-make into a
-# dh-make output file, you may use that output file without restriction.
-# This special exception was added by Craig Small in version 0.37 of dh-make.
+
+export DEB_BUILD_MAINT_OPTIONS=hardening=+all
+include /usr/share/dpkg/architecture.mk
+
+BUILDDIR = obj-$(DEB_HOST_MULTIARCH)
 
 # Uncomment this to turn on verbose mode.
 export DH_VERBOSE=1
-# TODO: remove the LDFLAGS override.  It's here to avoid esoteric problems
-# of this sort:
-#  https://code.ros.org/trac/ros/ticket/2977
-#  https://code.ros.org/trac/ros/ticket/3842
-export LDFLAGS=
-export PKG_CONFIG_PATH=/opt/ros/melodic/lib/pkgconfig
-# Explicitly enable -DNDEBUG, see:
-# 	https://github.com/ros-infrastructure/bloom/issues/327
-export DEB_CXXFLAGS_MAINT_APPEND=-DNDEBUG
+
+CMAKE_FLAGS = \
+	-DCMAKE_BUILD_TYPE=Release	\
+	-DCMAKE_CXX_FLAGS_RELEASE="$(CXXFLAGS)" \
+	-DCMAKE_C_FLAGS_RELEASE="$(CFLAGS)" \
+	-DCMAKE_EXE_LINKER_FLAGS_RELEASE="$(LDFLAGS)" \
+	-DCMAKE_INSTALL_LIBDIR="lib/$(DEB_HOST_MULTIARCH)" \
+	-DCMAKE_INSTALL_PREFIX=/usr \
+	-DCMAKE_SKIP_RPATH=ON \
+	-DCMAKE_VERBOSE_MAKEFILE=ON \
+	-DPYTHON_INSTALL_DIRECTORY="../debian/tmp/usr/" \
+	$(CMAKE_ARCH_FLAGS)
 
 %:
-	dh $@ -v --buildsystem=cmake
+	dh $@ --with python3 --buildsystem=cmake
 
 override_dh_auto_configure:
-	# In case we're installing to a non-standard location, look for a setup.sh
-	# in the install tree that was dropped by catkin, and source it.  It will
-	# set things like CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "/opt/ros/melodic/setup.sh" ]; then . "/opt/ros/melodic/setup.sh"; fi && \
-	dh_auto_configure -- \
-		-DCATKIN_BUILD_BINARY_PACKAGE="1" \
-		-DCMAKE_INSTALL_PREFIX="/opt/ros/melodic" \
-		-DCMAKE_PREFIX_PATH="/opt/ros/melodic"
+	# For debugging:
+	env
 
-override_dh_auto_build:
-	# In case we're installing to a non-standard location, look for a setup.sh
-	# in the install tree that was dropped by catkin, and source it.  It will
-	# set things like CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "/opt/ros/melodic/setup.sh" ]; then . "/opt/ros/melodic/setup.sh"; fi && \
-	dh_auto_build
+	dh_auto_configure -B $(BUILDDIR) \
+		-- $(CMAKE_FLAGS) \
+		-DCMAKE_SHARED_LINKER_FLAGS_RELEASE="$(LDFLAGS)" \
+		-DBUILD_SHARED_LIBS=ON
 
-override_dh_auto_test:
-	# In case we're installing to a non-standard location, look for a setup.sh
-	# in the install tree that was dropped by catkin, and source it.  It will
-	# set things like CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	echo -- Running tests. Even if one of them fails the build is not canceled.
-	if [ -f "/opt/ros/melodic/setup.sh" ]; then . "/opt/ros/melodic/setup.sh"; fi && \
-	dh_auto_test || true
-
-override_dh_shlibdeps:
-	# In case we're installing to a non-standard location, look for a setup.sh
-	# in the install tree that was dropped by catkin, and source it.  It will
-	# set things like CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "/opt/ros/melodic/setup.sh" ]; then . "/opt/ros/melodic/setup.sh"; fi && \
-	dh_shlibdeps -l$(CURDIR)/debian/ros-melodic-mvsim//opt/ros/melodic/lib/
 
 override_dh_auto_install:
-	# In case we're installing to a non-standard location, look for a setup.sh
-	# in the install tree that was dropped by catkin, and source it.  It will
-	# set things like CMAKE_PREFIX_PATH, PKG_CONFIG_PATH, and PYTHONPATH.
-	if [ -f "/opt/ros/melodic/setup.sh" ]; then . "/opt/ros/melodic/setup.sh"; fi && \
-	dh_auto_install
+	dh_auto_install -B $(BUILDDIR)
+	# Install python:
+	dh_auto_build -O--buildsystem=cmake -- python-install
+
+override_dh_missing:
+	dh_missing --list-missing

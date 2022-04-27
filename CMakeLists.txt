@@ -3,23 +3,23 @@
 # |                                                                         |
 # |  https://github.com/ual-arm-ros-pkg/multivehicle-simulator              |
 # |                                                                         |
-# | Copyright (C) 2014  Jose Luis Blanco Claraco (University of Almeria)    |
-# | Distributed under GNU General Public License version 3                  |
-# |   See <http://www.gnu.org/licenses/>                                    |
+# | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+# | Distributed under 3-clause BSD License                                  |
+# |   See COPYING                                                           |
 # +-------------------------------------------------------------------------+
 
 cmake_minimum_required(VERSION 3.1)
-SET(CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS 1)
-PROJECT(mvsim)  # Must match the ROS package name.
-#set (CMAKE_CXX_STANDARD 14)
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
+# CMake file for the library target
+project(mvsim)
+# Project name must match the ROS package name.
+set(MVSIM_VERSION  0.3.0)
 
-if(COMMAND cmake_policy)
-      cmake_policy(SET CMP0003 NEW)
-      if(POLICY CMP0048)
-      	cmake_policy(SET CMP0048 OLD)  # project version
-      endif()
+find_package(Threads)
+include(GNUInstallDirs)
+
+if (POLICY CMP0057)
+	cmake_policy(SET CMP0057 NEW) # IN_LIST (needed by pybind11 cmake scripts)
 endif()
 
 # ------------------------------------------------------------------
@@ -43,39 +43,41 @@ find_package(catkin
 	roscpp tf mrpt_bridge dynamic_reconfigure std_msgs nav_msgs sensor_msgs visualization_msgs dynamic_reconfigure message_generation
 	)
 
-SET(BUILD_FOR_ROS FALSE)
-IF (${catkin_FOUND})
-	SET(BUILD_FOR_ROS TRUE)
-	MESSAGE(STATUS " ==== multivehicle-simulator: ROS' catkin detected. ROS nodes will be built. ===== ")
-	ADD_DEFINITIONS(-DMVSIM_HAS_ROS)
-ENDIF()
+set(BUILD_FOR_ROS FALSE)
+if (catkin_FOUND AND mrpt_bridge_FOUND)
+	set(BUILD_FOR_ROS TRUE)
+	message(STATUS " ==== multivehicle-simulator: ROS' catkin detected. ROS nodes will be built. ===== ")
+	add_definitions(-DMVSIM_HAS_ROS)
+endif()
 
 
 # --------------------------
 # Build options
 # --------------------------
-IF (UNIX)
-	SET(DEFAULT_SHARED_LIBS ON)
-ELSE()
-	SET(DEFAULT_SHARED_LIBS OFF)
-ENDIF()
-SET(BUILD_SHARED_LIBS ${DEFAULT_SHARED_LIBS} CACHE BOOL "Build shared libraries (.dll/.so) instead of static ones (.lib/.a)")
+if (UNIX)
+	set(DEFAULT_SHARED_LIBS ON)
+else()
+	set(DEFAULT_SHARED_LIBS OFF)
+endif()
+set(BUILD_SHARED_LIBS ${DEFAULT_SHARED_LIBS} CACHE BOOL "Build shared libraries (.dll/.so) instead of static ones (.lib/.a)")
 
 # Save all libs and executables in the same place
-IF (NOT BUILD_FOR_ROS)
-	SET( LIBRARY_OUTPUT_PATH ${${PROJECT_NAME}_BINARY_DIR}/lib CACHE PATH "Output directory for libraries" )
-	SET( EXECUTABLE_OUTPUT_PATH ${${PROJECT_NAME}_BINARY_DIR}/bin CACHE PATH "Output directory for applications" )
-ENDIF()
+if (NOT BUILD_FOR_ROS)
+	set( LIBRARY_OUTPUT_PATH ${${PROJECT_NAME}_BINARY_DIR}/lib CACHE PATH "Output directory for libraries" )
+	set( EXECUTABLE_OUTPUT_PATH ${${PROJECT_NAME}_BINARY_DIR}/bin CACHE PATH "Output directory for applications" )
+endif()
+
+set(CMAKE_DEBUG_POSTFIX "-dbg")
 
 # --------------------------
 # Global compiler flags
 # --------------------------
-IF(MSVC)
+if(MSVC)
 	# Warnings level
-	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3")
 	# Force usage of UNICODE projects, which is not the default in MSVC:
 	add_definitions(-DUNICODE -D_UNICODE)
-ENDIF()
+endif()
 
 if (CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	# High level of warnings.
@@ -89,33 +91,27 @@ if (CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
   # Set optimized building:
 endif()
 
-IF(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
+if(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   add_compile_options(-O3)
-ENDIF()
-
-set(EXTERNALS_DIR "${PROJECT_SOURCE_DIR}/externals/")
+endif()
 
 # --------------------------
 # Dependency: MRPT
 # --------------------------
-FIND_PACKAGE( MRPT REQUIRED COMPONENTS opengl obs maps gui tfest)
-message(STATUS "MRPT_VERSION: ${MRPT_VERSION}")
-if(MRPT_VERSION VERSION_LESS "1.9.9")
-	set (CMAKE_CXX_STANDARD 14)
-endif()
-# Defines: MRPT_LIBS -> libs to link against
+find_package(MRPT REQUIRED COMPONENTS opengl obs maps gui tfest serialization tclap)
+# Defines: MRPT_LIBRARIES -> libs to link against
 
 # --------------------------
 # Dependency: Box2D
 # --------------------------
-SET(EMBEDDED_Box2D_DIR "${${PROJECT_NAME}_BINARY_DIR}/externals/Box2D/Box2D")
+set(EMBEDDED_Box2D_DIR "${${PROJECT_NAME}_BINARY_DIR}/externals/Box2D/Box2D")
 
 # 1st) Try to locate it via CMake (installed in the system or precompiled somewhere)
-SET(Box2D_DIR "${EMBEDDED_Box2D_DIR}" CACHE PATH "Path to Box2D CMake config file" FORCE)
-FIND_PACKAGE(Box2D QUIET) # Quiet in a 1st try...
+set(Box2D_DIR "${EMBEDDED_Box2D_DIR}" CACHE PATH "Path to Box2D CMake config file" FORCE)
+find_package(Box2D QUIET) # Quiet in a 1st try...
 # Defines:
 
-IF (NOT Box2D_FOUND OR "${Box2D_DIR}" STREQUAL "${EMBEDDED_Box2D_DIR}")
+if (NOT Box2D_FOUND OR "${Box2D_DIR}" STREQUAL "${EMBEDDED_Box2D_DIR}")
 	# Use embedded version:
 	# Override some defaults in the embedded project:
 	set(BOX2D_INSTALL ON CACHE BOOL "Install Box2D libs, includes, and CMake scripts" FORCE) # IMPORTANT: This must be ON to enable parsing Box2D's .cmake.in file!!
@@ -123,60 +119,53 @@ IF (NOT Box2D_FOUND OR "${Box2D_DIR}" STREQUAL "${EMBEDDED_Box2D_DIR}")
 	option(BOX2D_BUILD_SHARED "Build Box2D shared libraries" OFF)
 	option(BOX2D_BUILD_STATIC "Build Box2D static libraries" ON)
 	option(BOX2D_BUILD_EXAMPLES "Build Box2D examples" OFF)
-	MARK_AS_ADVANCED(BOX2D_INSTALL)
-	MARK_AS_ADVANCED(BOX2D_INSTALL_DOC)
-	MARK_AS_ADVANCED(BOX2D_BUILD_SHARED)
-	MARK_AS_ADVANCED(BOX2D_BUILD_STATIC)
-	MARK_AS_ADVANCED(BOX2D_BUILD_EXAMPLES)
+	mark_as_advanced(BOX2D_INSTALL)
+	mark_as_advanced(BOX2D_INSTALL_DOC)
+	mark_as_advanced(BOX2D_BUILD_SHARED)
+	mark_as_advanced(BOX2D_BUILD_STATIC)
+	mark_as_advanced(BOX2D_BUILD_EXAMPLES)
 
 	add_subdirectory(externals/Box2D)
 
+	set_property(TARGET Box2D PROPERTY POSITION_INDEPENDENT_CODE ON)
+
 	# 2nd attempt: Fatal error if not found:
-	MESSAGE(STATUS "INFO: Box2D library not found in the system. Using embedded copy.")
-	SET(Box2D_DIR "${EMBEDDED_Box2D_DIR}" CACHE PATH "Path to Box2D CMake config file" FORCE)
-	FIND_PACKAGE(Box2D REQUIRED)
+	message(STATUS "INFO: Box2D library not found in the system. Using embedded copy.")
+	set(Box2D_DIR "${EMBEDDED_Box2D_DIR}" CACHE PATH "Path to Box2D CMake config file" FORCE)
+	find_package(Box2D REQUIRED)
 
 	# It seems BOX2D doesn't return the correct #include dir (???):
-	SET(BOX2D_INCLUDE_DIR "${${PROJECT_NAME}_SOURCE_DIR}/externals/Box2D/")
+	set(BOX2D_INCLUDE_DIR "${${PROJECT_NAME}_SOURCE_DIR}/externals/Box2D/")
+endif()
 
-ENDIF()
-
-IF (Box2D_FOUND)
-	#MESSAGE(STATUS "BOX2D_INCLUDE_DIR: ${BOX2D_INCLUDE_DIR}")
-	IF (NOT "" STREQUAL "${BOX2D_INCLUDE_DIR}")
-		INCLUDE_DIRECTORIES("${BOX2D_INCLUDE_DIR}")
-	ENDIF (NOT "" STREQUAL "${BOX2D_INCLUDE_DIR}")
+if (Box2D_FOUND)
+	#message(STATUS "BOX2D_INCLUDE_DIR: ${BOX2D_INCLUDE_DIR}")
+	if (NOT "" STREQUAL "${BOX2D_INCLUDE_DIR}")
+		include_directories("${BOX2D_INCLUDE_DIR}")
+	endif()
 
 	# It seems this var is not always set (!?)
-	IF ("" STREQUAL "${BOX2D_LIBRARIES}")
-		SET(BOX2D_LIBRARIES Box2D)
-	ENDIF ("" STREQUAL "${BOX2D_LIBRARIES}")
-ENDIF()
+	if ("" STREQUAL "${BOX2D_LIBRARIES}")
+		set(BOX2D_LIBRARIES Box2D)
+	endif()
+endif()
 
-
-# --------------------------
-# Dependency: rapidxml
-# --------------------------
-# headers-only:
-INCLUDE_DIRECTORIES("${EXTERNALS_DIR}/rapidxml")
 
 
 # --------------------------
-#       The Library
+#  Main library modules
 # --------------------------
-INCLUDE_DIRECTORIES("${${PROJECT_NAME}_SOURCE_DIR}/libmvsim/include/")
-
-add_subdirectory(libmvsim)
+add_subdirectory(modules)
 
 # --------------------------
 #       Apps
 # --------------------------
-add_subdirectory(mvsim_app) # Standalone app
+add_subdirectory(mvsim-cli)
 
 # -----------------------------------------------------------------------------
 #                                   ROS SEGMENT
 # -----------------------------------------------------------------------------
-IF (BUILD_FOR_ROS)
+if (BUILD_FOR_ROS)
 	################################################
 	## Declare ROS messages, services and actions ##
 	################################################
@@ -207,9 +196,11 @@ IF (BUILD_FOR_ROS)
 	)
 
 	#add dynamic reconfigure api
-	generate_dynamic_reconfigure_options(
-	  cfg/mvsimNode.cfg
-	)
+	if (dynamic_reconfigure_FOUND)
+		generate_dynamic_reconfigure_options(
+			cfg/mvsimNode.cfg
+			)
+	endif()
 
 	###################################
 	## catkin specific configuration ##
@@ -236,7 +227,7 @@ IF (BUILD_FOR_ROS)
 	## Specify additional locations of header files
 	## Your package locations should be listed before other locations
 	include_directories("mvsim_node_src/include" ${catkin_INCLUDE_DIRS})
-	include_directories(${BOX2D_INCLUDE_DIR}) # Required by mvsim lib
+	#include_directories(${BOX2D_INCLUDE_DIR}) # Required by mvsim lib
 
 	###########
 	## Build ##
@@ -250,25 +241,27 @@ IF (BUILD_FOR_ROS)
 
 	## Add cmake target dependencies of the executable/library
 	## as an example, message headers may need to be generated before nodes
-	# add_dependencies(mrpt_localization_node mrpt_localization_generate_messages_cpp)
 	add_dependencies(mvsim_node
 		mvsim_gencfg
-		mvsim # the simulator lib
+		#mvsim # the simulator lib
 		)
 
 	# make sure configure headers are built before any node using them
-	IF (${PROJECT_NAME}_EXPORTED_TARGETS})
+	if (${PROJECT_NAME}_EXPORTED_TARGETS})
 		add_dependencies(mvsim_node ${${PROJECT_NAME}_EXPORTED_TARGETS})
-	ENDIF()
+	endif()
 
 	## Specify libraries to link a library or executable target against
-        target_link_libraries(
-                mvsim_node
-                mvsim  # the simulator lib
-                ${BOX2D_LIBRARIES}  # Box2D libs
-		${MRPT_LIBRARIES}
-                ${catkin_LIBRARIES}
-		)
+	target_link_libraries(
+		mvsim_node
+		mvsim::simulator
+		mvsim::msgs
+		mvsim::comms
+		${MRPT_LIBRARIES}  # MRPT libs
+		${BOX2D_LIBRARIES}  # Box2D libs
+		${catkin_LIBRARIES}
+		${CMAKE_THREAD_LIBS_INIT}
+	)
 
 	#############
 	## Install ##
@@ -304,11 +297,11 @@ IF (BUILD_FOR_ROS)
 	#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 	# )
 
-ENDIF() # BUILD_FOR_ROS
+endif() # BUILD_FOR_ROS
 
 
 # -----------------------------------------------------------------------------
 #                                MOOS/OpenMORA SEGMENT
 # -----------------------------------------------------------------------------
-#IF(xxx)
-#ENDIF() #
+#if(xxx)
+#endif() #
