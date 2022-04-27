@@ -1,16 +1,23 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>mvsim</name>
-  <version>0.2.1</version>
   <description>Node for the "multivehicle simulator" framework.</description>
+
+  <!-- REMEMBER: Keep in synch version number in:
+    * package.xml
+    * CMakeLists.txt
+    * libmvsim/mvsim/mvsim_version.h
+    * CHANGELOG.rst
+   -->
+  <version>0.3.1</version>
 
   <maintainer email="jlblanco@ual.es">Jose-Luis Blanco-Claraco</maintainer>
   <license>BSD</license>
-  <url type="website">http://wiki.ros.org/mvsim</url>
+  <url type="website">https://wiki.ros.org/mvsim</url>
 
   <buildtool_depend>catkin</buildtool_depend>
 
-  <depend>mrpt1</depend>
+  <depend>mrpt2</depend>
 
   <depend>roscpp</depend>
   <depend>std_msgs</depend>
@@ -22,5 +29,11 @@
   <depend>tf</depend>
   <depend>message_generation</depend>
   <depend>message_runtime</depend>
+  <depend>box2d-dev</depend>
+  <depend>libzmq3-dev</depend>
+  <depend>libzmqpp-dev</depend>
+  <depend>boost</depend>
+  <depend>pybind11-dev</depend>
+  <depend>protobuf-dev</depend>
 
 </package>
