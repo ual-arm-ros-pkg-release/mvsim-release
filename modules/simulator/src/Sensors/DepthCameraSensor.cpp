@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -191,8 +191,8 @@ void DepthCameraSensor::internalGuiUpdate(
 	m_gl_sensor_origin->setPose(p);
 }
 
-void DepthCameraSensor::simul_pre_timestep(
-	[[maybe_unused]] const TSimulContext& context)
+void DepthCameraSensor::simul_pre_timestep([
+	[maybe_unused]] const TSimulContext& context)
 {
 }
 
@@ -287,7 +287,8 @@ void DepthCameraSensor::simulateOn3DScene(
 	// Add random noise:
 	if (m_depth_noise_sigma > 0)
 	{
-		auto& rng = mrpt::random::getRandomGenerator();
+		// Each thread must create its own rng:
+		thread_local mrpt::random::CRandomGenerator rng;
 
 		float* d = depthImage.data();
 		const size_t N = depthImage.size();
