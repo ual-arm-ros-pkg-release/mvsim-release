@@ -7,18 +7,20 @@
   |   See COPYING                                                           |
   +-------------------------------------------------------------------------+ */
 #include <mrpt/core/lock_helper.h>
+#include <mrpt/math/TTwist2D.h>
 #include <mrpt/system/filesystem.h>	 // filePathSeparatorsToNative()
 #include <mvsim/World.h>
+#include <mvsim/mvsim-msgs/GenericAnswer.pb.h>
+#include <mvsim/mvsim-msgs/SrvGetPose.pb.h>
+#include <mvsim/mvsim-msgs/SrvGetPoseAnswer.pb.h>
+#include <mvsim/mvsim-msgs/SrvSetControllerTwist.pb.h>
+#include <mvsim/mvsim-msgs/SrvSetControllerTwistAnswer.pb.h>
+#include <mvsim/mvsim-msgs/SrvSetPose.pb.h>
+#include <mvsim/mvsim-msgs/SrvSetPoseAnswer.pb.h>
 
 #include <algorithm>  // count()
 #include <map>
 #include <stdexcept>
-
-#include <mvsim/mvsim-msgs/GenericAnswer.pb.h>
-#include <mvsim/mvsim-msgs/SrvGetPose.pb.h>
-#include <mvsim/mvsim-msgs/SrvGetPoseAnswer.pb.h>
-#include <mvsim/mvsim-msgs/SrvSetPose.pb.h>
-#include <mvsim/mvsim-msgs/SrvSetPoseAnswer.pb.h>
 
 using namespace mvsim;
 using namespace std;
@@ -72,6 +74,10 @@ void World::run_simulation(double dt)
 {
 	const double t0 = mrpt::Clock::toDouble(mrpt::Clock::now());
 
+	// Define start of simulation time:
+	if (!m_simul_start_wallclock_time.has_value())
+		m_simul_start_wallclock_time = t0;
+
 	m_timlogger.registerUserMeasure("run_simulation.dt", dt);
 
 	// sanity checks:
@@ -84,8 +90,14 @@ void World::run_simulation(double dt)
 	const double timetol = 1e-6;
 	while (m_simul_time < (end_time - timetol))
 	{
-		// Timestep: always "simul_step" for the sake of repeatibility
-		internal_one_timestep(m_simul_timestep);
+		// Timestep: always "simul_step" for the sake of repeatibility,
+		// except if requested to run a shorter step:
+		const double remainingTime = end_time - m_simul_time;
+		if (remainingTime < 0) break;
+
+		internal_one_timestep(
+			remainingTime > m_simul_timestep ? m_simul_timestep
+											 : remainingTime);
 	}
 
 	const double t1 = mrpt::Clock::toDouble(mrpt::Clock::now());
@@ -134,9 +146,30 @@ void World::internal_one_timestep(double dt)
 			if (e.second) e.second->simul_post_timestep(context);
 	}
 
+	// 4) Wait for 3D sensors (OpenGL raytrace) to get executed on its thread:
+	mrpt::system::CTimeLoggerEntry tle4(
+		m_timlogger, "timestep.4.wait_3D_sensors");
+	if (pending_running_sensors_on_3D_scene())
+	{
+		for (int i = 0; i < 1000 && pending_running_sensors_on_3D_scene(); i++)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		if (pending_running_sensors_on_3D_scene())
+		{
+#if 1
+			MRPT_LOG_WARN(
+				"Timeout waiting for async sensors to be simulated in opengl "
+				"thread.");
+#endif
+			m_timlogger.registerUserMeasure("timestep.timeout_3D_sensors", 1.0);
+		}
+	}
+	tle4.stop();
+
 	const double ts = m_timer_iteration.Tac();
 	m_timlogger.registerUserMeasure("timestep", ts);
-	if (ts > dt) m_timlogger.registerUserMeasure("timestep_too_slow_alert", ts);
+	if (ts > dt) m_timlogger.registerUserMeasure("timestep.too_slow_alert", ts);
 }
 
 std::string World::xmlPathToActualPath(const std::string& modelURI) const
@@ -184,24 +217,25 @@ std::string World::resolvePath(const std::string& s_in) const
 	else
 		ret = s;
 
-	// Expand macros: (TODO)
-	// -------------------
-
 	return mrpt::system::filePathSeparatorsToNative(ret);
 }
 
-/** Run the user-provided visitor on each vehicle */
 void World::runVisitorOnVehicles(const vehicle_visitor_t& v)
 {
 	for (auto& veh : m_vehicles)
 		if (veh.second) v(*veh.second);
 }
 
-/** Run the user-provided visitor on each world element */
 void World::runVisitorOnWorldElements(const world_element_visitor_t& v)
 {
 	for (auto& we : m_world_elements)
 		if (we) v(*we);
+}
+
+void World::runVisitorOnBlocks(const block_visitor_t& v)
+{
+	for (auto& b : m_blocks)
+		if (b.second) v(*b.second);
 }
 
 void World::connectToServer()
@@ -298,6 +332,15 @@ void World::connectToServer()
 						po->set_pitch(p.pitch);
 						po->set_roll(p.roll);
 
+						const auto t = itV->second->getTwist();
+						auto* tw = ans.mutable_twist();
+						tw->set_vx(t.vx);
+						tw->set_vy(t.vy);
+						tw->set_vz(0);
+						tw->set_wx(0);
+						tw->set_wy(0);
+						tw->set_wz(t.omega);
+
 						ans.set_objectisincollision(
 							itV->second->hadCollision());
 						itV->second->resetCollisionFlag();
@@ -308,6 +351,60 @@ void World::connectToServer()
 					}
 					return ans;
 				}));
+
+	m_client.advertiseService<
+		mvsim_msgs::SrvSetControllerTwist,
+		mvsim_msgs::SrvSetControllerTwistAnswer>(
+		"set_controller_twist",
+		std::function<mvsim_msgs::SrvSetControllerTwistAnswer(
+			const mvsim_msgs::SrvSetControllerTwist&)>(
+			[this](const mvsim_msgs::SrvSetControllerTwist& req) {
+				std::lock_guard<std::mutex> lck(m_simulationStepRunningMtx);
+
+				mvsim_msgs::SrvSetControllerTwistAnswer ans;
+				ans.set_success(false);
+
+				const auto sId = req.objectid();
+
+				auto itV = m_simulableObjects.find(sId);
+				if (itV == m_simulableObjects.end())
+				{
+					ans.set_errormessage("objectId not found");
+					return ans;
+				}
+
+				auto veh = std::dynamic_pointer_cast<VehicleBase>(itV->second);
+				if (!veh)
+				{
+					ans.set_errormessage("objectId is not of VehicleBase type");
+					return ans;
+				}
+
+				mvsim::ControllerBaseInterface* controller =
+					veh->getControllerInterface();
+				if (!controller)
+				{
+					ans.set_errormessage(
+						"objectId vehicle seems not to have any controller");
+					return ans;
+				}
+
+				const mrpt::math::TTwist2D t(
+					req.twistsetpoint().vx(), req.twistsetpoint().vy(),
+					req.twistsetpoint().wz());
+
+				const bool ctrlAcceptTwist = controller->setTwistCommand(t);
+				if (!ctrlAcceptTwist)
+				{
+					ans.set_errormessage(
+						"objectId vehicle controller did not accept the twist "
+						"command");
+					return ans;
+				}
+
+				ans.set_success(true);
+				return ans;
+			}));
 }
 
 void World::insertBlock(const Block::Ptr& block)

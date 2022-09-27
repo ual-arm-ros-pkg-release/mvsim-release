@@ -92,17 +92,25 @@ void DynamicsAckermann::dynamics_load_params_from_xml(
 	//<fl_wheel mass="6.0" width="0.30" diameter="0.62" />
 	//<fr_wheel mass="6.0" width="0.30" diameter="0.62" />
 	const char* w_names[4] = {
-		"rl_wheel",  // 0
-		"rr_wheel",  // 1
-		"fl_wheel",  // 2
-		"fr_wheel"  // 3
+		"rl_wheel",	 // 0
+		"rr_wheel",	 // 1
+		"fl_wheel",	 // 2
+		"fr_wheel"	// 3
 	};
 	// Load common params:
 	for (size_t i = 0; i < 4; i++)
 	{
-		const rapidxml::xml_node<char>* xml_wheel =
-			xml_node->first_node(w_names[i]);
-		if (xml_wheel) m_wheels_info[i].loadFromXML(xml_wheel);
+		if (auto xml_wheel = xml_node->first_node(w_names[i]); xml_wheel)
+		{
+			m_wheels_info[i].loadFromXML(xml_wheel);
+		}
+		else
+		{
+			m_world->logFmt(
+				mrpt::system::LVL_WARN,
+				"No XML entry '%s' found: using defaults for wheel #%u",
+				w_names[i], static_cast<unsigned int>(i));
+		}
 	}
 
 	//<f_wheels_x>1.3</f_wheels_x>
@@ -146,26 +154,24 @@ void DynamicsAckermann::dynamics_load_params_from_xml(
 
 			const std::string sCtrlClass = std::string(control_class->value());
 			if (sCtrlClass == ControllerRawForces::class_name())
-				m_controller =
-					ControllerBasePtr(new ControllerRawForces(*this));
+				m_controller = std::make_shared<ControllerRawForces>(*this);
 			else if (sCtrlClass == ControllerTwistFrontSteerPID::class_name())
 				m_controller =
-					ControllerBasePtr(new ControllerTwistFrontSteerPID(*this));
+					std::make_shared<ControllerTwistFrontSteerPID>(*this);
 			else if (sCtrlClass == ControllerFrontSteerPID::class_name())
-				m_controller =
-					ControllerBasePtr(new ControllerFrontSteerPID(*this));
+				m_controller = std::make_shared<ControllerFrontSteerPID>(*this);
 			else
-				throw runtime_error(mrpt::format(
+				THROW_EXCEPTION_FMT(
 					"[DynamicsAckermann] Unknown 'class'='%s' in "
 					"<controller> XML node",
-					sCtrlClass.c_str()));
+					sCtrlClass.c_str());
 
 			m_controller->load_config(*xml_control);
 		}
 	}
 	// Default controller:
 	if (!m_controller)
-		m_controller = ControllerBasePtr(new ControllerRawForces(*this));
+		m_controller = std::make_shared<ControllerRawForces>(*this);
 }
 
 // See docs in base class:

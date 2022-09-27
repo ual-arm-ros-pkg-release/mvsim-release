@@ -25,8 +25,17 @@ class World;
 class VisualObject
 {
    public:
-	VisualObject(World* parent) : m_world(parent) {}
-	virtual ~VisualObject() {}
+	VisualObject(
+		World* parent, bool insertCustomVizIntoViz = true,
+		bool insertCustomVizIntoPhysical = true)
+		: m_world(parent),
+		  m_insertCustomVizIntoViz(insertCustomVizIntoViz),
+		  m_insertCustomVizIntoPhysical(insertCustomVizIntoPhysical)
+	{
+	}
+
+	virtual ~VisualObject();
+
 	/** Must create a new object in the scene and/or update it according to the
 	 * current state */
 	virtual void guiUpdate(
@@ -60,6 +69,9 @@ class VisualObject
 	std::shared_ptr<mrpt::opengl::CSetOfObjects> m_glCustomVisual;
 	std::shared_ptr<mrpt::opengl::CSetOfObjects> m_glBoundingBox;
 	int32_t m_glCustomVisualId = -1;
+
+	const bool m_insertCustomVizIntoViz = true;
+	const bool m_insertCustomVizIntoPhysical = true;
 
 	virtual void internalGuiUpdate(
 		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
