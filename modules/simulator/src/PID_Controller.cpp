@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -10,18 +10,6 @@
 #include <mvsim/PID_Controller.h>
 
 using namespace mvsim;
-
-PID_Controller::PID_Controller()
-	: KP(1.0),
-	  KI(.0),
-	  KD(.0),
-	  max_out(0),
-	  lastOutput(0),
-	  e_n(0),
-	  e_n_1(0),
-	  e_n_2(0)
-{
-}
 
 /** err = desired-actual, dt=ellapsed time in secs */
 double PID_Controller::compute(double err, double dt)
@@ -48,4 +36,10 @@ double PID_Controller::compute(double err, double dt)
 	}
 
 	return output;
+}
+
+void PID_Controller::reset()
+{
+	lastOutput = 0;
+	e_n = 0, e_n_1 = 0, e_n_2 = 0;
 }

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <Box2D/Dynamics/b2Body.h>
+#include <box2d/b2_body.h>
 #include <mrpt/math/TPoint2D.h>
 #include <mrpt/math/TPose3D.h>
 #include <mrpt/poses/CPose2D.h>

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -11,6 +11,7 @@
 #include <mrpt/math/TPose2D.h>
 #include <mrpt/opengl/CPolyhedron.h>
 #include <mrpt/poses/CPose2D.h>
+#include <mrpt/system/filesystem.h>
 #include <mvsim/FrictionModels/DefaultFriction.h>  // For use as default model
 #include <mvsim/FrictionModels/FrictionBase.h>
 #include <mvsim/VehicleBase.h>
@@ -48,6 +49,10 @@ void register_all_veh_dynamics()
 		done = true;
 
 	REGISTER_VEHICLE_DYNAMICS("differential", DynamicsDifferential)
+	REGISTER_VEHICLE_DYNAMICS(
+		"differential_3_wheels", DynamicsDifferential_3_wheels)
+	REGISTER_VEHICLE_DYNAMICS(
+		"differential_4_wheels", DynamicsDifferential_4_wheels)
 	REGISTER_VEHICLE_DYNAMICS("ackermann", DynamicsAckermann)
 	REGISTER_VEHICLE_DYNAMICS(
 		"ackermann_drivetrain", DynamicsAckermannDrivetrain)
@@ -78,15 +83,11 @@ constexpr char VehicleBase::WL_FRIC_Y[];
 VehicleBase::VehicleBase(World* parent, size_t nWheels)
 	: VisualObject(parent),
 	  Simulable(parent),
-	  m_vehicle_index(0),
-	  m_chassis_mass(15.0),
-	  m_chassis_z_min(0.05),
-	  m_chassis_z_max(0.6),
-	  m_chassis_color(0xff, 0x00, 0x00),
-	  m_chassis_com(.0, .0),
-	  m_wheels_info(nWheels),
 	  m_fixture_wheels(nWheels, nullptr)
 {
+	// Create wheels:
+	for (size_t i = 0; i < nWheels; i++) m_wheels_info.emplace_back(parent);
+
 	// Default shape:
 	m_chassis_poly.emplace_back(-0.4, -0.5);
 	m_chassis_poly.emplace_back(-0.4, 0.5);
@@ -143,9 +144,48 @@ VehicleBase::Ptr VehicleBase::factory(
 	//  in the set of "root" + "class_root" XML nodes:
 	// --------------------------------------------------------------------------------
 	JointXMLnode<> veh_root_node;
+
+	std::vector<XML_Doc_Data::Ptr> scopedLifeDocs;
+
+	// Solve includes:
+	for (auto n = root->first_node(); n; n = n->next_sibling())
 	{
-		veh_root_node.add(
-			root);	// Always search in root. Also in the class root, if any:
+		if (strcmp(n->name(), "include") != 0) continue;
+
+		auto fileAttrb = n->first_attribute("file");
+		ASSERTMSG_(
+			fileAttrb,
+			"XML tag '<include />' must have a 'file=\"xxx\"' attribute)");
+
+		const std::string relFile = fileAttrb->value();
+		const auto absFile = parent->resolvePath(relFile);
+		parent->logStr(
+			mrpt::system::LVL_DEBUG,
+			mrpt::format("XML parser: including file: '%s'", absFile.c_str()));
+
+		std::map<std::string, std::string> vars;
+		for (auto attr = n->first_attribute(); attr;
+			 attr = attr->next_attribute())
+		{
+			if (strcmp(attr->name(), "file") == 0) continue;
+			vars[attr->name()] = attr->value();
+		}
+
+		const auto [xml, nRoot] = readXmlAndGetRoot(absFile, vars);
+		// the XML document object must exist during this whole function scope
+		scopedLifeDocs.emplace_back(xml);
+
+		// recursive parse:
+		const auto newBasePath =
+			mrpt::system::trim(mrpt::system::extractFileDirectory(absFile));
+
+		veh_root_node.add(nRoot->parent());
+	}
+
+	// ---
+	{
+		// Always search in root. Also in the class root, if any:
+		veh_root_node.add(root);
 
 		const xml_attribute<>* veh_class = root->first_attribute("class");
 		if (veh_class)
@@ -660,43 +700,44 @@ void VehicleBase::internalGuiUpdate(
 
 	// 1st time call?? -> Create objects
 	// ----------------------------------
-	if (!childrenOnly)
+	const size_t nWs = this->getNumWheels();
+	if (!m_gl_chassis)
 	{
-		const size_t nWs = this->getNumWheels();
-		if (!m_gl_chassis)
-		{
-			m_gl_chassis = mrpt::opengl::CSetOfObjects::Create();
+		m_gl_chassis = mrpt::opengl::CSetOfObjects::Create();
+		m_gl_chassis->setName("vehicle_chassis_"s + m_name);
 
-			// Wheels shape:
-			m_gl_wheels.resize(nWs);
-			for (size_t i = 0; i < nWs; i++)
-			{
-				m_gl_wheels[i] = mrpt::opengl::CSetOfObjects::Create();
-				this->getWheelInfo(i).getAs3DObject(*m_gl_wheels[i]);
-				m_gl_chassis->insert(m_gl_wheels[i]);
-			}
+		// Wheels shape:
+		m_gl_wheels.resize(nWs);
+		for (size_t i = 0; i < nWs; i++)
+		{
+			m_gl_wheels[i] = mrpt::opengl::CSetOfObjects::Create();
+			this->getWheelInfo(i).getAs3DObject(*m_gl_wheels[i]);
+			m_gl_chassis->insert(m_gl_wheels[i]);
+		}
+
+		if (!childrenOnly)
+		{
 			// Robot shape:
-			mrpt::opengl::CPolyhedron::Ptr gl_poly =
-				mrpt::opengl::CPolyhedron::CreateCustomPrism(
-					m_chassis_poly, m_chassis_z_max - m_chassis_z_min);
+			auto gl_poly = mrpt::opengl::CPolyhedron::CreateCustomPrism(
+				m_chassis_poly, m_chassis_z_max - m_chassis_z_min);
 			gl_poly->setLocation(0, 0, m_chassis_z_min);
 			gl_poly->setColor_u8(m_chassis_color);
 			m_gl_chassis->insert(gl_poly);
-
-			viz.insert(m_gl_chassis);
-			physical.insert(m_gl_chassis);
 		}
 
-		// Update them:
-		// ----------------------------------
-		m_gl_chassis->setPose(getPose());
+		viz.insert(m_gl_chassis);
+		physical.insert(m_gl_chassis);
+	}
 
-		for (size_t i = 0; i < nWs; i++)
-		{
-			const Wheel& w = getWheelInfo(i);
-			m_gl_wheels[i]->setPose(mrpt::math::TPose3D(
-				w.x, w.y, 0.5 * w.diameter, w.yaw, w.getPhi(), 0.0));
-		}
+	// Update them:
+	// ----------------------------------
+	m_gl_chassis->setPose(getPose());
+
+	for (size_t i = 0; i < nWs; i++)
+	{
+		const Wheel& w = getWheelInfo(i);
+		m_gl_wheels[i]->setPose(mrpt::math::TPose3D(
+			w.x, w.y, 0.5 * w.diameter, w.yaw, w.getPhi(), 0.0));
 	}
 
 	// Init on first use:

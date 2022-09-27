@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -26,6 +26,8 @@ using namespace mvsim;
 
 static std::atomic_int32_t g_uniqueCustomVisualId = 0;
 
+VisualObject::~VisualObject() = default;
+
 void VisualObject::guiUpdate(
 	mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical)
 {
@@ -43,9 +45,12 @@ void VisualObject::guiUpdate(
 			m_glCustomVisualId = g_uniqueCustomVisualId++;
 			const auto name = "_autoViz"s + std::to_string(m_glCustomVisualId);
 			m_glCustomVisual->setName(name);
+
 			// Add to the 3D scene:
-			viz.insert(m_glCustomVisual);
-			physical.insert(m_glCustomVisual);
+			if (m_insertCustomVizIntoViz) viz.insert(m_glCustomVisual);
+
+			if (m_insertCustomVizIntoPhysical)
+				physical.insert(m_glCustomVisual);
 		}
 
 		// Update pose:
@@ -80,6 +85,7 @@ bool VisualObject::parseVisual(const rapidxml::xml_node<char>* visual_node)
 	MRPT_TRY_START
 
 	m_glBoundingBox = mrpt::opengl::CSetOfObjects::Create();
+	m_glBoundingBox->setName("bbox");
 
 	if (visual_node == nullptr) return false;
 
@@ -89,6 +95,7 @@ bool VisualObject::parseVisual(const rapidxml::xml_node<char>* visual_node)
 	bool initialShowBoundingBox = false;
 
 	std::string modelCull = "NONE";
+	mrpt::img::TColor modelColor = mrpt::img::TColor::white();
 
 	TParameterDefinitions params;
 	params["model_uri"] = TParamEntry("%s", &modelURI);
@@ -101,6 +108,7 @@ bool VisualObject::parseVisual(const rapidxml::xml_node<char>* visual_node)
 	params["model_roll"] = TParamEntry("%lf_deg", &modelPose.roll);
 	params["show_bounding_box"] = TParamEntry("%bool", &initialShowBoundingBox);
 	params["model_cull_faces"] = TParamEntry("%s", &modelCull);
+	params["model_color"] = TParamEntry("%color", &modelColor);
 
 	// Parse XML params:
 	parse_xmlnode_children_as_param(*visual_node, params);
@@ -126,6 +134,13 @@ bool VisualObject::parseVisual(const rapidxml::xml_node<char>* visual_node)
 				mrpt::opengl::CAssimpModel::LoadFlags::RealTimeMaxQuality |
 				mrpt::opengl::CAssimpModel::LoadFlags::FlipUVs;
 
+#if MRPT_VERSION >= 0x250
+			if (modelColor != mrpt::img::TColor::white())
+				loadFlags |=
+					mrpt::opengl::CAssimpModel::LoadFlags::IgnoreMaterialColor;
+
+			m->setColor_u8(modelColor);
+#endif
 			if (mrpt::get_env<bool>("MVSIM_LOAD_MODELS_VERBOSE", false))
 				loadFlags |= mrpt::opengl::CAssimpModel::LoadFlags::Verbose;
 
@@ -156,6 +171,7 @@ bool VisualObject::parseVisual(const rapidxml::xml_node<char>* visual_node)
 	glGroup->setName("group");
 
 	m_glCustomVisual = mrpt::opengl::CSetOfObjects::Create();
+	m_glCustomVisual->setName("glCustomVisual");
 	m_glCustomVisual->insert(glGroup);
 	m_glBoundingBox->setVisibility(initialShowBoundingBox);
 

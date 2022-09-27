@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -19,10 +19,12 @@ extern TCLAP::ValueArg<std::string> argVerbosity;
 extern TCLAP::ValueArg<int> argPort;
 extern TCLAP::SwitchArg argHelp;
 extern TCLAP::SwitchArg argDetails;
+extern TCLAP::SwitchArg argFullProfiler;
 
 using cmd_t = std::function<int(void)>;
 
 int printListCommands();  // "help"
+void printVersion();  // "--version"
 int launchStandAloneServer();  // "server"
 int launchSimulation();	 // "launch"
 int commandNode();	// "node"

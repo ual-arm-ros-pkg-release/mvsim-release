@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -49,7 +49,15 @@ class SocketMonitor : public zmq::monitor_t
 			}
 			catch (const std::exception& e)
 			{
-				std::cerr << "[MySocketMonitor] Error: " << e.what() << "\n";
+				if (zmq_errno() == ETERM)
+				{
+					// Not a real error, just we are shutting down.
+				}
+				else
+				{
+					std::cerr << "[MySocketMonitor] Error: " << e.what()
+							  << " (zmq_errno=" << zmq_errno() << ")\n";
+				}
 			}
 		});
 	}

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -28,7 +28,12 @@ class OccupancyGridMap : public WorldElementBase
 	OccupancyGridMap(World* parent, const rapidxml::xml_node<char>* root);
 	virtual ~OccupancyGridMap();
 
-	virtual void loadConfigFrom(const rapidxml::xml_node<char>* root) override;
+	void doLoadConfigFrom(const rapidxml::xml_node<char>* root);
+
+	virtual void loadConfigFrom(const rapidxml::xml_node<char>* root) override
+	{
+		doLoadConfigFrom(root);
+	}
 
 	virtual void simul_pre_timestep(const TSimulContext& context) override;
 

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -9,6 +9,7 @@
 #pragma once
 
 #include <mvsim/basic_types.h>
+
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -69,7 +70,7 @@ class ClassFactory
 
    private:
 	std::map<std::string, TClassData> m_classes;
-};  // namespace mvsim
+};	// namespace mvsim
 
 #define DECLARES_REGISTER_CLASS1(CLASS_NAME, BASE_CLASS, ARG1) \
    public:                                                     \

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -10,7 +10,6 @@
 #pragma once
 
 #include <mrpt/obs/CObservation3DRangeScan.h>
-#include <mrpt/obs/CObservationImage.h>
 #include <mrpt/opengl/CFBORender.h>
 #include <mrpt/opengl/CPointCloudColoured.h>
 #include <mvsim/Sensors/SensorBase.h>
@@ -19,11 +18,22 @@
 
 namespace mvsim
 {
-/** RGB+D camera sensor on board a vehicle.
+/** "RGB+D" or just "D" (depth without RGB) camera sensor on board a vehicle.
+ *
+ *  Use the XML parameters:
+ * \code
+ * <sense_depth>true</sense_depth>
+ * <sense_rgb>true</sense_rgb>
+ * \endcode
+ *
+ * to optionally disable the simulation of either the RGB or Depth part of
+ * the outcoming mrpt::obs::CObservation3DRangeScan observations.
+ *
  */
 class DepthCameraSensor : public SensorBase
 {
 	DECLARES_REGISTER_SENSOR(DepthCameraSensor)
+
    public:
 	DepthCameraSensor(Simulable& parent, const rapidxml::xml_node<char>* root);
 	virtual ~DepthCameraSensor();
@@ -72,11 +82,16 @@ class DepthCameraSensor : public SensorBase
 
 	float m_ambient_light = 0.6f;
 
+	bool m_sense_depth = true;	//!< Simulate the DEPTH sensor part
+	bool m_sense_rgb = true;  //!< Simulate the RGB sensor part
+
 	float m_depth_noise_sigma = 1e-3;
 	bool m_show_3d_pointcloud = false;
 
 	mrpt::opengl::CSetOfObjects::Ptr m_gl_sensor_origin,
 		m_gl_sensor_origin_corner;
 	mrpt::opengl::CSetOfObjects::Ptr m_gl_sensor_fov, m_gl_sensor_frustum;
+
+	mrpt::math::CMatrixFloat m_depthImage;	// to avoid memory allocs
 };
 }  // namespace mvsim

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -99,9 +99,14 @@ class Client : public mrpt::system::COutputLogger
 		const std::string& serviceName, const INPUT_MSG_T& input,
 		OUTPUT_MSG_T& output);
 
-	// Overload for python wrapper
+	/// Overload for python wrapper
 	std::string callService(
 		const std::string& serviceName, const std::string& inputSerializedMsg);
+	/// Overload for python wrapper
+	void subscribeTopic(
+		const std::string& topicName,
+		const std::function<void(const std::string& /*serializedMsg*/)>&
+			callback);
 
 	struct InfoPerNode
 	{

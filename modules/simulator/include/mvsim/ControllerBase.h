@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -29,13 +29,15 @@ class ControllerBaseInterface
 		std::string append_gui_lines;
 	};
 
-	virtual void teleop_interface(const TeleopInput& in, TeleopOutput& out)
+	virtual void teleop_interface(
+		[[maybe_unused]] const TeleopInput& in,
+		[[maybe_unused]] TeleopOutput& out)
 	{ /*default: do nothing*/
 	}
 
 	/** Accept a Twist command. \return true if the controller supports this
 	 * kind of commands, false otherwise */
-	virtual bool setTwistCommand(const double vx, const double wz)
+	virtual bool setTwistCommand([[maybe_unused]] const mrpt::math::TTwist2D& t)
 	{
 		return false; /* default: no */
 	}
@@ -46,6 +48,8 @@ template <class VEH_DYNAMICS>
 class ControllerBaseTempl : public ControllerBaseInterface
 {
    public:
+	using Ptr = std::shared_ptr<ControllerBaseTempl<VEH_DYNAMICS>>;
+
 	ControllerBaseTempl(VEH_DYNAMICS& veh) : m_veh(veh) {}
 	virtual ~ControllerBaseTempl() {}
 	/** This is to handle basic need of all the controllers.*/
@@ -96,7 +100,8 @@ class ControllerBaseTempl : public ControllerBaseInterface
 		typename VEH_DYNAMICS::TControllerOutput& co) = 0;
 
 	/** Override to load class-specific options from the <controller> node */
-	virtual void load_config(const rapidxml::xml_node<char>& node)
+	virtual void load_config(  //
+		[[maybe_unused]] const rapidxml::xml_node<char>& node)
 	{ /*default: do nothing*/
 	}
 

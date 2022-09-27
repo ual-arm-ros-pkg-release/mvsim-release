@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -12,16 +12,20 @@ namespace mvsim
 {
 struct PID_Controller
 {
-	PID_Controller();
+	PID_Controller() = default;
 
-	double KP, KI, KD;
-	double max_out;  //!< For clamping (0=no clamp)
+	double KP = 1.0, KI = 0, KD = 0;
+	double max_out = 0;	 //!< For clamping (0=no clamp)
 
 	/** err = desired-actual, dt=ellapsed time in secs */
 	double compute(double err, double dt);
 
+	/** Reset internal status to all zeros (KP, KI,DP, max_out remain
+	 * unmodified) */
+	void reset();
+
    private:
-	double lastOutput;
-	double e_n, e_n_1, e_n_2;
+	double lastOutput = 0;
+	double e_n = 0, e_n_1 = 0, e_n_2 = 0;
 };
 }  // namespace mvsim

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -272,6 +272,7 @@ void Block::internalGuiUpdate(
 		if (!m_gl_block)
 		{
 			m_gl_block = mrpt::opengl::CSetOfObjects::Create();
+			m_gl_block->setName(m_name);
 
 			// Block shape:
 			auto gl_poly = mrpt::opengl::CPolyhedron::CreateCustomPrism(

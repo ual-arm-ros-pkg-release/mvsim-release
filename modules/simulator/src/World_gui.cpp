@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -14,6 +14,7 @@
 #include <mrpt/math/TObject3D.h>
 #include <mrpt/math/geometry.h>
 #include <mrpt/obs/CObservation3DRangeScan.h>
+#include <mrpt/obs/CObservationImage.h>
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/version.h>
 #include <mvsim/World.h>
@@ -59,17 +60,10 @@ void World::GUI::prepare_control_window()
 		nanogui::Orientation::Vertical, nanogui::Alignment::Fill, 5));
 
 	w->add<nanogui::Button>("Quit", ENTYPO_ICON_ARROW_BOLD_LEFT)
-		->setCallback(
-			[this]()
-			{
-				gui_win->setVisible(false);
-				nanogui::leave();
-			});
-
-	w->add<nanogui::CheckBox>(
-		 "Orthogonal view",
-		 [&](bool b) { gui_win->camera().setCameraProjective(!b); })
-		->setChecked(m_parent.m_gui_options.ortho);
+		->setCallback([this]() {
+			gui_win->setVisible(false);
+			nanogui::leave();
+		});
 
 	std::vector<std::string> lstVehicles;
 	lstVehicles.reserve(m_parent.m_vehicles.size() + 1);
@@ -80,32 +74,41 @@ void World::GUI::prepare_control_window()
 	w->add<nanogui::Label>("Camera follows:");
 	auto cbFollowVeh = w->add<nanogui::ComboBox>(lstVehicles);
 	cbFollowVeh->setSelectedIndex(0);
-	cbFollowVeh->setCallback(
-		[this, lstVehicles](int idx)
-		{
-			if (idx == 0)
-				m_parent.m_gui_options.follow_vehicle.clear();
-			else if (idx <= static_cast<int>(m_parent.m_vehicles.size()))
-				m_parent.m_gui_options.follow_vehicle = lstVehicles[idx];
-		});
+	cbFollowVeh->setCallback([this, lstVehicles](int idx) {
+		if (idx == 0)
+			m_parent.m_gui_options.follow_vehicle.clear();
+		else if (idx <= static_cast<int>(m_parent.m_vehicles.size()))
+			m_parent.m_gui_options.follow_vehicle = lstVehicles[idx];
+	});
 
-	w->add<nanogui::CheckBox>(
-		 "View sensor poses",
-		 [&](bool b)
-		 {
-			 const auto& objs = SensorBase::GetAllSensorsOriginViz();
-			 for (const auto& o : *objs) o->setVisibility(b);
-		 })
-		->setChecked(false);
+	w->add<nanogui::CheckBox>("Orthogonal view", [&](bool b) {
+		 gui_win->camera().setCameraProjective(!b);
+	 })->setChecked(m_parent.m_gui_options.ortho);
 
-	w->add<nanogui::CheckBox>(
-		 "View sensor FOVs",
-		 [&](bool b)
-		 {
-			 const auto& objs = SensorBase::GetAllSensorsFOVViz();
-			 for (const auto& o : *objs) o->setVisibility(b);
-		 })
-		->setChecked(false);
+	w->add<nanogui::CheckBox>("View forces", [&](bool b) {
+		 m_parent.m_gui_options.show_forces = b;
+	 })->setChecked(m_parent.m_gui_options.show_forces);
+
+	w->add<nanogui::CheckBox>("View sensor pointclouds", [&](bool b) {
+		 std::lock_guard<std::mutex> lck(gui_win->background_scene_mtx);
+
+		 auto glVizSensors =
+			 std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(
+				 gui_win->background_scene->getByName("group_sensors_viz"));
+		 ASSERT_(glVizSensors);
+
+		 glVizSensors->setVisibility(b);
+	 })->setChecked(m_parent.m_gui_options.show_sensor_points);
+
+	w->add<nanogui::CheckBox>("View sensor poses", [&](bool b) {
+		 const auto& objs = SensorBase::GetAllSensorsOriginViz();
+		 for (const auto& o : *objs) o->setVisibility(b);
+	 })->setChecked(false);
+
+	w->add<nanogui::CheckBox>("View sensor FOVs", [&](bool b) {
+		 const auto& objs = SensorBase::GetAllSensorsFOVViz();
+		 for (const auto& o : *objs) o->setVisibility(b);
+	 })->setChecked(false);
 }
 
 // Add Status window
@@ -117,10 +120,10 @@ void World::GUI::prepare_status_window()
 	nanogui::Window* w = new nanogui::Window(gui_win.get(), "Status");
 #endif
 
-	w->setPosition({140, 80});
+	w->setPosition({5, 255});
 	w->setLayout(new nanogui::BoxLayout(
 		nanogui::Orientation::Vertical, nanogui::Alignment::Fill));
-	w->setFixedWidth(270);
+	w->setFixedWidth(320);
 
 #if MRPT_VERSION < 0x211
 	w->buttonPanel()
@@ -129,7 +132,7 @@ void World::GUI::prepare_status_window()
 #endif
 
 	lbCpuUsage = w->add<nanogui::Label>(" ");
-	lbStatuses.resize(5);
+	lbStatuses.resize(12);
 	for (size_t i = 0; i < lbStatuses.size(); i++)
 		lbStatuses[i] = w->add<nanogui::Label>(" ");
 }
@@ -230,28 +233,26 @@ void World::GUI::prepare_editor_window()
 			gui_cbObjects.emplace_back(ipo);
 
 			cb->setChecked(false);
-			cb->setCallback(
-				[cb, ipo, this](bool check)
+			cb->setCallback([cb, ipo, this](bool check) {
+				// deselect former one:
+				if (gui_selectedObject.visual)
+					gui_selectedObject.visual->showBoundingBox(false);
+				if (gui_selectedObject.cb)
+					gui_selectedObject.cb->setChecked(false);
+				gui_selectedObject = InfoPerObject();
+
+				cb->setChecked(check);
+
+				// If checked, show bounding box:
+				if (ipo.visual && check)
 				{
-					// deselect former one:
-					if (gui_selectedObject.visual)
-						gui_selectedObject.visual->showBoundingBox(false);
-					if (gui_selectedObject.cb)
-						gui_selectedObject.cb->setChecked(false);
-					gui_selectedObject = InfoPerObject();
+					gui_selectedObject = ipo;
+					ipo.visual->showBoundingBox(true);
+				}
 
-					cb->setChecked(check);
-
-					// If checked, show bounding box:
-					if (ipo.visual && check)
-					{
-						gui_selectedObject = ipo;
-						ipo.visual->showBoundingBox(true);
-					}
-
-					const bool btnsEnabled = !!gui_selectedObject.simulable;
-					for (auto b : btns_selectedOps) b->setEnabled(btnsEnabled);
-				});
+				const bool btnsEnabled = !!gui_selectedObject.simulable;
+				for (auto b : btns_selectedOps) b->setEnabled(btnsEnabled);
+			});
 		}
 	}
 
@@ -268,86 +269,79 @@ void World::GUI::prepare_editor_window()
 		pn->add<nanogui::Label>("Reorient:");
 		auto slAngle = pn->add<nanogui::Slider>();
 		slAngle->setRange({-M_PI, M_PI});
-		slAngle->setCallback(
-			[this](float v)
-			{
-				if (!gui_selectedObject.simulable) return;
-				auto p = gui_selectedObject.simulable->getPose();
-				p.yaw = v;
-				gui_selectedObject.simulable->setPose(p);
-			});
+		slAngle->setCallback([this](float v) {
+			if (!gui_selectedObject.simulable) return;
+			auto p = gui_selectedObject.simulable->getPose();
+			p.yaw = v;
+			gui_selectedObject.simulable->setPose(p);
+		});
 		slAngle->setFixedWidth(150);
 		btns_selectedOps.push_back(slAngle);
 	}
 
 	auto btnPlaceCoords = w->add<nanogui::Button>("Replace by coordinates...");
 	btns_selectedOps.push_back(btnPlaceCoords);
-	btnPlaceCoords->setCallback(
-		[this]()
+	btnPlaceCoords->setCallback([this]() {
+		//
+		if (!gui_selectedObject.simulable) return;
+
+		auto* formPose = new nanogui::Window(gui_win.get(), "Enter new pose");
+		formPose->setLayout(new nanogui::GridLayout(
+			nanogui::Orientation::Horizontal, 2, nanogui::Alignment::Fill, 5));
+
+		nanogui::TextBox* lbs[3];
+
+		formPose->add<nanogui::Label>("x coordinate:");
+		lbs[0] = formPose->add<nanogui::TextBox>();
+		formPose->add<nanogui::Label>("y coordinate:");
+		lbs[1] = formPose->add<nanogui::TextBox>();
+		formPose->add<nanogui::Label>("Orientation:");
+		lbs[2] = formPose->add<nanogui::TextBox>();
+
+		for (int i = 0; i < 3; i++)
 		{
-			//
-			if (!gui_selectedObject.simulable) return;
+			lbs[i]->setEditable(true);
+			lbs[i]->setFixedSize({100, 20});
+			lbs[i]->setValue("0.0");
+			lbs[i]->setUnits(i == 2 ? "[deg]" : "[m]");
+			lbs[i]->setDefaultValue("0.0");
+			lbs[i]->setFontSize(16);
+			lbs[i]->setFormat("[-]?[0-9]*\\.?[0-9]+");
+		}
 
-			auto* formPose =
-				new nanogui::Window(gui_win.get(), "Enter new pose");
-			formPose->setLayout(new nanogui::GridLayout(
-				nanogui::Orientation::Horizontal, 2, nanogui::Alignment::Fill,
-				5));
+		const auto pos = gui_selectedObject.simulable->getPose();
+		lbs[0]->setValue(std::to_string(pos.x));
+		lbs[1]->setValue(std::to_string(pos.y));
+		lbs[2]->setValue(std::to_string(mrpt::RAD2DEG(pos.yaw)));
 
-			nanogui::TextBox* lbs[3];
+		formPose->add<nanogui::Label>("");
+		formPose->add<nanogui::Label>("");
 
-			formPose->add<nanogui::Label>("x coordinate:");
-			lbs[0] = formPose->add<nanogui::TextBox>();
-			formPose->add<nanogui::Label>("y coordinate:");
-			lbs[1] = formPose->add<nanogui::TextBox>();
-			formPose->add<nanogui::Label>("Orientation:");
-			lbs[2] = formPose->add<nanogui::TextBox>();
+		formPose->add<nanogui::Button>("Cancel")->setCallback(
+			[formPose]() { formPose->dispose(); });
 
-			for (int i = 0; i < 3; i++)
-			{
-				lbs[i]->setEditable(true);
-				lbs[i]->setFixedSize({100, 20});
-				lbs[i]->setValue("0.0");
-				lbs[i]->setUnits(i == 2 ? "[deg]" : "[m]");
-				lbs[i]->setDefaultValue("0.0");
-				lbs[i]->setFontSize(16);
-				lbs[i]->setFormat("[-]?[0-9]*\\.?[0-9]+");
-			}
+		formPose->add<nanogui::Button>("Accept")->setCallback(
+			[formPose, this, lbs]() {
+				gui_selectedObject.simulable->setPose(
+					{// X:
+					 std::stod(lbs[0]->value()),
+					 // Y:
+					 std::stod(lbs[1]->value()),
+					 // Z:
+					 .0,
+					 // Yaw
+					 mrpt::DEG2RAD(std::stod(lbs[2]->value())),
+					 // Pitch
+					 0.0,
+					 // Roll:
+					 0.0});
+				formPose->dispose();
+			});
 
-			const auto pos = gui_selectedObject.simulable->getPose();
-			lbs[0]->setValue(std::to_string(pos.x));
-			lbs[1]->setValue(std::to_string(pos.y));
-			lbs[2]->setValue(std::to_string(mrpt::RAD2DEG(pos.yaw)));
-
-			formPose->add<nanogui::Label>("");
-			formPose->add<nanogui::Label>("");
-
-			formPose->add<nanogui::Button>("Cancel")->setCallback(
-				[formPose]() { formPose->dispose(); });
-
-			formPose->add<nanogui::Button>("Accept")->setCallback(
-				[formPose, this, lbs]()
-				{
-					gui_selectedObject.simulable->setPose(
-						{// X:
-						 std::stod(lbs[0]->value()),
-						 // Y:
-						 std::stod(lbs[1]->value()),
-						 // Z:
-						 .0,
-						 // Yaw
-						 mrpt::DEG2RAD(std::stod(lbs[2]->value())),
-						 // Pitch
-						 0.0,
-						 // Roll:
-						 0.0});
-					formPose->dispose();
-				});
-
-			formPose->setModal(true);
-			formPose->center();
-			formPose->setVisible(true);
-		});
+		formPose->setModal(true);
+		formPose->center();
+		formPose->setVisible(true);
+	});
 
 	for (auto b : btns_selectedOps) b->setEnabled(false);
 
@@ -383,12 +377,22 @@ void World::internal_GUI_thread()
 		// Add a background scene:
 		{
 			auto scene = mrpt::opengl::COpenGLScene::Create();
-			scene->insert(m_glUserObjs);
 
-			m_physical_objects.insert(m_glUserObjs);
+			// add the placeholders for user-provided objects, both for pure
+			// visualization only, and physical objects:
+			scene->insert(m_glUserObjsViz);
+			m_physical_objects.insert(m_glUserObjsPhysical);
 
 			scene->getViewport()->lightParameters().ambient = {
 				0.5f, 0.5f, 0.5f, 1.0f};
+
+			// Create group for sensor viz:
+			{
+				auto glVizSensors = mrpt::opengl::CSetOfObjects::Create();
+				glVizSensors->setName("group_sensors_viz");
+				glVizSensors->setVisibility(m_gui_options.show_sensor_points);
+				scene->insert(glVizSensors);
+			}
 
 			std::lock_guard<std::mutex> lck(
 				m_gui.gui_win->background_scene_mtx);
@@ -426,8 +430,7 @@ void World::internal_GUI_thread()
 #else
 		m_gui.gui_win->setKeyboardCallback(
 #endif
-			[&](int key, int /*scancode*/, int action, int modifiers)
-			{
+			[&](int key, int /*scancode*/, int action, int modifiers) {
 				if (action != GLFW_PRESS && action != GLFW_REPEAT) return false;
 
 				auto lck = mrpt::lockHelper(m_lastKeyEvent_mtx);
@@ -450,14 +453,13 @@ void World::internal_GUI_thread()
 
 		// The GUI must be closed from this same thread. Use a shared atomic
 		// bool:
-		auto lambdaLoopCallback = [](World& me)
-		{
+		auto lambdaLoopCallback = [](World& me) {
 			if (me.m_gui_thread_must_close) nanogui::leave();
 
 			// Update all GUI elements:
 			ASSERT_(me.m_gui.gui_win->background_scene);
 
-			auto lckPhys = mrpt::lockHelper(me.m_physical_objects_mtx);
+			auto lckPhys = mrpt::lockHelper(me.physical_objects_mtx());
 
 			me.internalUpdate3DSceneObjects(
 				*me.m_gui.gui_win->background_scene, me.m_physical_objects);
@@ -475,8 +477,10 @@ void World::internal_GUI_thread()
 			{
 				const auto lck = mrpt::lockHelper(me.m_gui_user_objects_mtx);
 				// replace list of smart pointers (fast):
-				if (me.m_gui_user_objects)
-					*me.m_glUserObjs = *me.m_gui_user_objects;
+				if (me.m_gui_user_objects_physical)
+					*me.m_glUserObjsPhysical = *me.m_gui_user_objects_physical;
+				if (me.m_gui_user_objects_viz)
+					*me.m_glUserObjsViz = *me.m_gui_user_objects_viz;
 			}
 		};
 
@@ -490,12 +494,12 @@ void World::internal_GUI_thread()
 		// Register observation callback:
 		const auto lambdaOnObservation =
 			[this](
-				const Simulable& veh, const mrpt::obs::CObservation::Ptr& obs)
-		{
-			// obs->getDescriptionAsText(std::cout);
-			this->enqueue_task_to_run_in_gui_thread(
-				[this, obs]() { internal_gui_on_observation(obs); });
-		};
+				const Simulable& veh, const mrpt::obs::CObservation::Ptr& obs) {
+				// obs->getDescriptionAsText(std::cout);
+				this->enqueue_task_to_run_in_gui_thread([this, obs, &veh]() {
+					internal_gui_on_observation(veh, obs);
+				});
+			};
 
 		this->registerCallbackOnObservation(lambdaOnObservation);
 
@@ -507,7 +511,13 @@ void World::internal_GUI_thread()
 			"[World::internal_GUI_thread] Using GUI FPS=%i (T=%i ms)",
 			m_gui_options.refresh_fps, refresh_ms);
 
+#if MRPT_VERSION >= 0x253
+		const int idleLoopTasks_ms = 10;
+
+		nanogui::mainloop(idleLoopTasks_ms, refresh_ms);
+#else
 		nanogui::mainloop(refresh_ms);
+#endif
 
 		MRPT_LOG_DEBUG("[World::internal_GUI_thread] Mainloop ended.");
 
@@ -619,20 +629,15 @@ void World::internal_process_pending_gui_user_tasks()
 void World::internalRunSensorsOn3DScene(
 	mrpt::opengl::COpenGLScene& physicalObjects)
 {
-	// Update view of vehicles
-	// -----------------------------
-	m_timlogger.enter("internalRunSensorsOn3DScene");
+	auto tle = mrpt::system::CTimeLoggerEntry(
+		m_timlogger, "internalRunSensorsOn3DScene");
 
 	for (auto& v : m_vehicles)
-	{
 		for (auto& sensor : v.second->getSensors())
-		{
-			if (!sensor) continue;
-			sensor->simulateOn3DScene(physicalObjects);
-		}
-	}
+			if (sensor) sensor->simulateOn3DScene(physicalObjects);
 
-	m_timlogger.leave("internalRunSensorsOn3DScene");
+	// clear the flag of pending 3D simulation required:
+	clear_pending_running_sensors_on_3D_scene();
 }
 
 void World::internalUpdate3DSceneObjects(
@@ -683,13 +688,17 @@ void World::internalUpdate3DSceneObjects(
 		const std::string msg_lines = m_gui_msg_lines;
 		m_gui_msg_lines_mtx.unlock();
 
+		int nextStatusLine = 0;
 		if (!msg_lines.empty())
 		{
-			MRPT_TODO("Split lines?");
-			m_gui.lbStatuses[0]->setCaption(msg_lines);
+			// split lines:
+			std::vector<std::string> lines;
+			mrpt::system::tokenize(msg_lines, "\r\n", lines);
+			for (const auto& l : lines)
+				m_gui.lbStatuses.at(nextStatusLine++)->setCaption(l);
 		}
-		m_gui.lbStatuses[1]->setCaption(
-			std::string("Mouse: ") + m_gui.clickedPt.asString());
+		m_gui.lbStatuses.at(nextStatusLine++)
+			->setCaption(std::string("Mouse: ") + m_gui.clickedPt.asString());
 	}
 
 	m_timlogger.leave("update_GUI.5.text-msgs");
@@ -781,7 +790,8 @@ void World::update_GUI(TUpdateGUIParams* guiparams)
 }
 
 // This method is ensured to be run in the GUI thread
-void World::internal_gui_on_observation(const mrpt::obs::CObservation::Ptr& obs)
+void World::internal_gui_on_observation(
+	const Simulable& veh, const mrpt::obs::CObservation::Ptr& obs)
 {
 	if (!obs) return;
 
@@ -789,11 +799,18 @@ void World::internal_gui_on_observation(const mrpt::obs::CObservation::Ptr& obs)
 			std::dynamic_pointer_cast<mrpt::obs::CObservation3DRangeScan>(obs);
 		obs3D)
 	{
-		internal_gui_on_observation_3Dscan(obs3D);
+		internal_gui_on_observation_3Dscan(veh, obs3D);
+	}
+	else if (auto obsIm =
+				 std::dynamic_pointer_cast<mrpt::obs::CObservationImage>(obs);
+			 obsIm)
+	{
+		internal_gui_on_observation_image(veh, obsIm);
 	}
 }
 
 void World::internal_gui_on_observation_3Dscan(
+	const Simulable& veh,
 	const std::shared_ptr<mrpt::obs::CObservation3DRangeScan>& obs)
 {
 	using namespace std::string_literals;
@@ -805,7 +822,8 @@ void World::internal_gui_on_observation_3Dscan(
 	if (obs->hasIntensityImage)
 	{
 		rgbImageWinSize = internal_gui_on_image(
-			obs->sensorLabel + "_rgb"s, obs->intensityImage, 5);
+			veh.getName() + "/"s + obs->sensorLabel + "_rgb"s,
+			obs->intensityImage, 5);
 	}
 	if (obs->hasRangeImage)
 	{
@@ -817,8 +835,23 @@ void World::internal_gui_on_observation_3Dscan(
 		imDepth.setFromMatrix(d, true /* in range [0,1] */);
 
 		internal_gui_on_image(
-			obs->sensorLabel + "_depth"s, imDepth, 5 + 5 + rgbImageWinSize.x);
+			veh.getName() + "/"s + obs->sensorLabel + "_depth"s, imDepth,
+			5 + 5 + rgbImageWinSize.x);
 	}
+}
+
+void World::internal_gui_on_observation_image(
+	const Simulable& veh,
+	const std::shared_ptr<mrpt::obs::CObservationImage>& obs)
+{
+	using namespace std::string_literals;
+
+	if (!m_gui.gui_win || !obs || obs->image.isEmpty()) return;
+
+	mrpt::math::TPoint2D rgbImageWinSize = {0, 0};
+
+	rgbImageWinSize = internal_gui_on_image(
+		veh.getName() + "/"s + obs->sensorLabel + "_rgb"s, obs->image, 5);
 }
 
 mrpt::math::TPoint2D World::internal_gui_on_image(

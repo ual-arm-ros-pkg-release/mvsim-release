@@ -1,16 +1,15 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
   +-------------------------------------------------------------------------+ */
 #pragma once
 
-#include <rapidxml.hpp>
-
 #include <map>
+#include <rapidxml.hpp>
 #include <string>
 
 namespace mvsim
@@ -24,7 +23,7 @@ class XmlClassesRegistry
 	struct TXMLData
 	{
 		rapidxml::xml_document<>* xml_doc;
-		std::string* xml_data;  // Must be kept alloc'ed during the entire life
+		std::string* xml_data;	// Must be kept alloc'ed during the entire life
 								// of xml_doc!!
 
 		TXMLData() : xml_doc(nullptr), xml_data(nullptr) {}
@@ -51,5 +50,5 @@ class XmlClassesRegistry
 	/** Register a new class, given its XML definition as a text block */
 	void add(const std::string& input_xml_node_class);
 
-};  // end class
+};	// end class
 }  // namespace mvsim

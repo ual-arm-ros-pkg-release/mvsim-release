@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       Multiblock simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -9,10 +9,10 @@
 
 #pragma once
 
-#include <Box2D/Collision/Shapes/b2PolygonShape.h>
-#include <Box2D/Dynamics/Joints/b2FrictionJoint.h>
-#include <Box2D/Dynamics/b2Fixture.h>
-#include <Box2D/Dynamics/b2World.h>
+#include <box2d/b2_fixture.h>
+#include <box2d/b2_friction_joint.h>
+#include <box2d/b2_polygon_shape.h>
+#include <box2d/b2_world.h>
 #include <mrpt/img/TColor.h>
 #include <mrpt/math/TPolygon2D.h>
 #include <mrpt/opengl/CSetOfLines.h>

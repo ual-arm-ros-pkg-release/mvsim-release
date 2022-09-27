@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -42,6 +42,9 @@ class LaserScanner : public SensorBase
 	virtual void internalGuiUpdate(
 		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
 		bool childrenOnly) override;
+
+	// when not using the 3D raytrace mode.
+	void internal_simulate_lidar_2d_mode(const TSimulContext& context);
 
 	int m_z_order;	//!< to help rendering multiple scans
 	mrpt::poses::CPose2D m_sensor_pose_on_veh;

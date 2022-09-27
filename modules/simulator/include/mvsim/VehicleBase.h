@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -9,10 +9,10 @@
 
 #pragma once
 
-#include <Box2D/Collision/Shapes/b2PolygonShape.h>
-#include <Box2D/Dynamics/b2Body.h>
-#include <Box2D/Dynamics/b2Fixture.h>
-#include <Box2D/Dynamics/b2World.h>
+#include <box2d/b2_body.h>
+#include <box2d/b2_fixture.h>
+#include <box2d/b2_polygon_shape.h>
+#include <box2d/b2_world.h>
 #include <mrpt/img/TColor.h>
 #include <mrpt/opengl/CSetOfLines.h>
 #include <mrpt/opengl/CSetOfObjects.h>
@@ -174,7 +174,7 @@ class VehicleBase : public VisualObject, public Simulable
 
 	/** user-supplied index number: must be set/get'ed with setVehicleIndex()
 	 * getVehicleIndex() (default=0) */
-	size_t m_vehicle_index;
+	size_t m_vehicle_index = 0;
 
 	/** Instance of friction model for the vehicle-to-ground interaction. */
 	FrictionBasePtr m_friction;
@@ -185,29 +185,35 @@ class VehicleBase : public VisualObject, public Simulable
 	std::vector<double> m_torque_per_wheel;
 
 	// Chassis info:
-	double m_chassis_mass;
+	double m_chassis_mass = 15.0;
 	mrpt::math::TPolygon2D m_chassis_poly;
-	double m_max_radius;  //!< Automatically computed from m_chassis_poly upon
-						  //! each change via updateMaxRadiusFromPoly()
-	double m_chassis_z_min, m_chassis_z_max;
-	mrpt::img::TColor m_chassis_color;
 
-	mrpt::math::TPoint2D m_chassis_com;	 //!< In local coordinates (this
-										 //! excludes the mass of wheels)
+	/** Automatically computed from m_chassis_poly upon each change via
+	 * updateMaxRadiusFromPoly() */
+	double m_max_radius = 0.1;
+
+	double m_chassis_z_min = 0.05, m_chassis_z_max = 0.6;
+
+	mrpt::img::TColor m_chassis_color{0xff, 0x00, 0x00};
+
+	/** center of mass. in local coordinates (this excludes the mass of wheels)
+	 */
+	mrpt::math::TPoint2D m_chassis_com{0, 0};
 
 	void updateMaxRadiusFromPoly();
 
-	// Wheels info:
-	std::vector<Wheel> m_wheels_info;  //!< The fixed size of this vector is set
-									   //! upon construction. Derived classes
-									   //! must define the order of the wheels,
-									   //! e.g. [0]=rear left, etc.
+	/** Wheels info.  The fixed size of this vector is set upon construction.
+	 *  Derived classes must define the order of the wheels, e.g. [0]=rear left,
+	 * etc.
+	 */
+	std::deque<Wheel> m_wheels_info;
 
 	// Box2D elements:
 	b2Fixture* m_fixture_chassis;  //!< Created at
-	std::vector<b2Fixture*> m_fixture_wheels;  //!< [0]:rear-left, etc.
-											   //!(depending on derived class).
-											   //! Size set at constructor.
+
+	/** [0]:rear-left, etc. (depending on derived class). Size set at
+	 * constructor. */
+	std::vector<b2Fixture*> m_fixture_wheels;
 
    private:
 	// Called from internalGuiUpdate_common()

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include <Box2D/Dynamics/Joints/b2FrictionJoint.h>
+#include <box2d/b2_friction_joint.h>
 #include <mvsim/FrictionModels/FrictionBase.h>
 #include <mvsim/TParameterDefinitions.h>
 

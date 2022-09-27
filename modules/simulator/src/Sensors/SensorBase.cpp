@@ -1,13 +1,14 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2020  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
   +-------------------------------------------------------------------------+ */
 
 #include <mrpt/core/format.h>
+#include <mvsim/Sensors/CameraSensor.h>
 #include <mvsim/Sensors/DepthCameraSensor.h>
 #include <mvsim/Sensors/LaserScanner.h>
 #include <mvsim/VehicleBase.h>
@@ -23,7 +24,7 @@
 #include "xml_utils.h"
 
 #if defined(MVSIM_HAS_ZMQ) && defined(MVSIM_HAS_PROTOBUF)
-#include "GenericObservation.pb.h"
+#include <mvsim/mvsim-msgs/GenericObservation.pb.h>
 #endif
 
 using namespace mvsim;
@@ -42,6 +43,7 @@ void register_all_sensors()
 
 	REGISTER_SENSOR("laser", LaserScanner)
 	REGISTER_SENSOR("rgbd_camera", DepthCameraSensor)
+	REGISTER_SENSOR("camera", CameraSensor)
 }
 
 static auto gAllSensorsOriginViz = mrpt::opengl::CSetOfObjects::Create();
@@ -111,6 +113,9 @@ SensorBase::Ptr SensorBase::factory(
 	if (!we)
 		throw runtime_error(mrpt::format(
 			"[SensorBase::factory] Unknown sensor type '%s'", root->name()));
+
+	// parse the optional visual model:
+	we->parseVisual(root->first_node("visual"));
 
 	return we;
 }
@@ -216,4 +221,16 @@ void SensorBase::make_sure_we_have_a_name(const std::string& prefix)
 
 	m_name = mrpt::format(
 		"%s%u", prefix.c_str(), static_cast<unsigned int>(nextIdx));
+}
+
+bool SensorBase::should_simulate_sensor(const TSimulContext& context)
+{
+	if (context.simul_time < m_sensor_last_timestamp + m_sensor_period)
+		return false;
+
+	m_sensor_last_timestamp = context.simul_time;
+	m_vehicle_pose_at_last_timestamp =
+		mrpt::poses::CPose3D(m_vehicle.getPose());
+
+	return true;
 }
