@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | ROS1 Melodic (u18.04) | [![Build Status](https://build.ros.org/job/Mdev__mvsim__ubuntu_bionic_amd64/badge/icon)](https://build.ros.org/job/Mdev__mvsim__ubuntu_bionic_amd64/) | [![Build Status](https://build.ros.org/view/Mbin_uB64/job/Mbin_uB64__mvsim__ubuntu_bionic_amd64__binary/badge/icon)](https://build.ros.org/view/Mbin_uB64/job/Mbin_uB64__mvsim__ubuntu_bionic_amd64__binary/)
 | ROS1 Noetic (u20.04) | [![Build Status](https://build.ros.org/job/Ndev__mvsim__ubuntu_focal_amd64/badge/icon)](https://build.ros.org/job/Ndev__mvsim__ubuntu_focal_amd64/) |  [![Build Status](https://build.ros.org/job/Nbin_uF64__mvsim__ubuntu_focal_amd64__binary/badge/icon)](https://build.ros.org/job/Nbin_uF64__mvsim__ubuntu_focal_amd64__binary/) |
-| ROS2 Rolling (u22.04) | xxx |  xxx |
+| ROS2 Rolling (u22.04) | [![Build Status](https://build.ros2.org/job/Rdev__mvsim__ubuntu_jammy_amd64/badge/icon)](https://build.ros2.org/job/Rdev__mvsim__ubuntu_jammy_amd64/) |  xxx |
 
 MultiVehicle simulator (libmvsim)
 ======================================
@@ -16,14 +16,32 @@ This package includes the C++ library `mvsim`, a standalone app and a ROS node.
 License: 3-clause BSD License
 Copyright (C) 2014-2022 Jose Luis Blanco <jlblanco@ual.es> (University of Almeria) and collaborators
 
-[![MvSim intro](https://img.youtube.com/vi/xMUMjEG8xlk/0.jpg)](https://www.youtube.com/watch?v=xMUMjEG8xlk)
+![screenshot-demo-2robots](docs/imgs/mvsim_screenshot_ros1_depth_camera_demo.png)
 
-![screenshot-demo-2robots](docs/imgs/screenshot-demo-2robots.png)
+[![MvSim intro](https://img.youtube.com/vi/xMUMjEG8xlk/0.jpg)](https://www.youtube.com/watch?v=xMUMjEG8xlk)
 
 Docs
 ----------
   * [Main documentation site](https://mvsimulator.readthedocs.io/en/latest/)
   * https://wiki.ros.org/mvsim
+  
+Launch demos
+--------------
+
+Standalone:
+
+    mvsim launch mvsim_tutorial/mvsim_demo_2robots.world.xml
+    
+    mvsim launch mvsim_tutorial/test_mesh.world.xml
+
+
+ROS1:
+
+    roslaunch mvsim mvsim_demo_depth_camera.launch
+
+ROS2:
+
+    ros2 launch mvsim mvsim_demo_depth_camera.launch.py
 
 Main features
 --------------

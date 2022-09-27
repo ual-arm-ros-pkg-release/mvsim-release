@@ -2,6 +2,29 @@
 Changelog for package mvsim
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.4.0 (2022-09-27)
+------------------
+* Major new release with tons of new features.
+* New sensors: RGB, depth, RGB+D cameras
+* Support for ROS1 and ROS2.
+* Sensors now can have 3D models.
+* New GUI controls to customize visualization.
+* New 3 and 4 wheels differential kinematic models.
+* Allow "include"s in XML files.
+* Add 3D Jackal robot model.
+* ROS nodes: publishers in parallel thread
+* mvsim-cli new flag to enable full profiling
+* Use new nanogui feature to limit GUI refresh rate
+* Fix running faster than real-time
+* More consistent timestamping of simulated sensors
+* mvsim now shows program version info
+* get_pose() service now also gets twist
+* Fix elevation maps
+* pybind11 per-version directory
+* Remove trailing '/' in tf frame names for consistency with modern conventions.
+* Rename COPYING -> LICENSE
+* Contributors: Jose Luis Blanco-Claraco
+
 0.3.2 (2022-06-21)
 ------------------
 * Install models/ subdirectory too

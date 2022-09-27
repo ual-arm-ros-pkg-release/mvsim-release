@@ -19,8 +19,10 @@ using namespace mvsim;
 using namespace std;
 
 // Ctor:
-DynamicsDifferential::DynamicsDifferential(World* parent)
-	: VehicleBase(parent, 2 /*num wheels*/)
+DynamicsDifferential::DynamicsDifferential(
+	World* parent, const std::vector<ConfigPerWheel>& cfgPerWheel)
+	: VehicleBase(parent, cfgPerWheel.size() /*num wheels*/),
+	  m_configPerWheel(cfgPerWheel)
 {
 	using namespace mrpt::math;
 
@@ -40,7 +42,7 @@ DynamicsDifferential::DynamicsDifferential(World* parent)
 	updateMaxRadiusFromPoly();
 
 	m_fixture_chassis = nullptr;
-	for (int i = 0; i < 2; i++) m_fixture_wheels[i] = nullptr;
+	for (auto& fw : m_fixture_wheels) fw = nullptr;
 }
 
 /** The derived-class part of load_params_from_xml() */
@@ -75,20 +77,24 @@ void DynamicsDifferential::dynamics_load_params_from_xml(
 	}
 
 	// <l_wheel ...>, <r_wheel ...>
-	const char* w_names[2] = {"l_wheel", "r_wheel"};
-	const double w_default_y[2] = {0.5, -0.5};
-	m_wheels_info.clear();
-	m_wheels_info.resize(2);  // reset default values
+
+	// reset default values
+	ASSERT_EQUAL_(getNumWheels(), m_configPerWheel.size());
 
 	// Load common params:
-	for (size_t i = 0; i < 2; i++)
+	for (size_t i = 0; i < getNumWheels(); i++)
 	{
+		const auto& cpw = m_configPerWheel.at(i);
+
 		const rapidxml::xml_node<char>* xml_wheel =
-			xml_node->first_node(w_names[i]);
+			xml_node->first_node(cpw.name.c_str());
 		if (xml_wheel)
 			m_wheels_info[i].loadFromXML(xml_wheel);
 		else
-			m_wheels_info[i].y = w_default_y[i];
+		{
+			m_wheels_info[i].x = cpw.pos.x;
+			m_wheels_info[i].y = cpw.pos.y;
+		}
 	}
 
 	// Vehicle controller:
@@ -107,15 +113,14 @@ void DynamicsDifferential::dynamics_load_params_from_xml(
 
 			const std::string sCtrlClass = std::string(control_class->value());
 			if (sCtrlClass == ControllerRawForces::class_name())
-				m_controller =
-					ControllerBasePtr(new ControllerRawForces(*this));
+				m_controller = std::make_shared<ControllerRawForces>(*this);
 			else if (sCtrlClass == ControllerTwistPID::class_name())
-				m_controller = ControllerBasePtr(new ControllerTwistPID(*this));
+				m_controller = std::make_shared<ControllerTwistPID>(*this);
 			else
-				throw runtime_error(mrpt::format(
+				THROW_EXCEPTION_FMT(
 					"[DynamicsDifferential] Unknown 'class'='%s' in "
 					"<controller> XML node",
-					sCtrlClass.c_str()));
+					sCtrlClass.c_str());
 
 			m_controller->load_config(*xml_control);
 		}
@@ -123,7 +128,7 @@ void DynamicsDifferential::dynamics_load_params_from_xml(
 
 	// Default controller:
 	if (!m_controller)
-		m_controller = ControllerBasePtr(new ControllerRawForces(*this));
+		m_controller = std::make_shared<ControllerRawForces>(*this);
 }
 
 // See docs in base class:
@@ -131,7 +136,9 @@ void DynamicsDifferential::invoke_motor_controllers(
 	const TSimulContext& context, std::vector<double>& out_torque_per_wheel)
 {
 	// Longitudinal forces at each wheel:
-	out_torque_per_wheel.assign(2, 0.0);
+	auto& otpw = out_torque_per_wheel;
+
+	otpw.assign(getNumWheels(), 0.0);
 
 	if (m_controller)
 	{
@@ -140,9 +147,28 @@ void DynamicsDifferential::invoke_motor_controllers(
 		ci.context = context;
 		TControllerOutput co;
 		m_controller->control_step(ci, co);
+
 		// Take its output:
-		out_torque_per_wheel[WHEEL_L] = co.wheel_torque_l;
-		out_torque_per_wheel[WHEEL_R] = co.wheel_torque_r;
+		switch (getNumWheels())
+		{
+			case 2:
+				otpw[WHEEL_L] = co.wheel_torque_l;
+				otpw[WHEEL_R] = co.wheel_torque_r;
+				break;
+			case 3:
+				otpw[WHEEL_L] = co.wheel_torque_l;
+				otpw[WHEEL_R] = co.wheel_torque_r;
+				otpw[WHEEL_CASTER_FRONT] = 0;
+				break;
+			case 4:
+				otpw[WHEEL_LR] = co.wheel_torque_l;
+				otpw[WHEEL_RR] = co.wheel_torque_r;
+				otpw[WHEEL_LF] = co.wheel_torque_l;
+				otpw[WHEEL_RF] = co.wheel_torque_r;
+				break;
+			default:
+				THROW_EXCEPTION("Unexpected number of wheels!");
+		};
 	}
 }
 
