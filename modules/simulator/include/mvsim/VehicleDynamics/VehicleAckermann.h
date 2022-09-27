@@ -58,8 +58,7 @@ class DynamicsAckermann : public VehicleBase
 	};
 
 	/** Virtual base for controllers of vehicles of type DynamicsAckermann */
-	typedef ControllerBaseTempl<DynamicsAckermann> ControllerBase;
-	typedef std::shared_ptr<ControllerBase> ControllerBasePtr;
+	using ControllerBase = ControllerBaseTempl<DynamicsAckermann>;
 
 	class ControllerRawForces : public ControllerBase
 	{
@@ -100,10 +99,10 @@ class DynamicsAckermann : public VehicleBase
 		double max_torque;	//!< Maximum abs. value torque (for clamp) [Nm]
 
 		// See base docs.
-		virtual bool setTwistCommand(const double vx, const double wz) override
+		virtual bool setTwistCommand(const mrpt::math::TTwist2D& t) override
 		{
-			setpoint_lin_speed = vx;
-			setpoint_ang_speed = wz;
+			setpoint_lin_speed = t.vx;
+			setpoint_ang_speed = t.omega;
 			return true;
 		}
 
@@ -138,8 +137,8 @@ class DynamicsAckermann : public VehicleBase
 		double m_r2f_L;
 	};
 
-	const ControllerBasePtr& getController() const { return m_controller; }
-	ControllerBasePtr& getController() { return m_controller; }
+	const ControllerBase::Ptr& getController() const { return m_controller; }
+	ControllerBase::Ptr& getController() { return m_controller; }
 	virtual ControllerBaseInterface* getControllerInterface() override
 	{
 		return m_controller.get();
@@ -168,7 +167,7 @@ class DynamicsAckermann : public VehicleBase
 		std::vector<double>& out_force_per_wheel) override;
 
    private:
-	ControllerBasePtr m_controller;	 //!< The installed controller
+	ControllerBase::Ptr m_controller;  //!< The installed controller
 
 	/** The maximum steering angle (rad). Determines min turning radius */
 	double m_max_steer_ang = mrpt::DEG2RAD(30);

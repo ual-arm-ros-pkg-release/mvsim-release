@@ -15,6 +15,7 @@
 #include <mrpt/math/TPose3D.h>
 #include <mrpt/poses/CPose2D.h>
 #include <mvsim/TParameterDefinitions.h>
+#include <mvsim/VisualObject.h>
 #include <mvsim/basic_types.h>
 
 namespace mvsim
@@ -22,18 +23,22 @@ namespace mvsim
 class DefaultFriction;
 class VehicleBase;
 class DynamicsDifferential;
+class World;
 
 /** Common info for 2D wheels, for usage in derived classes.
  * Wheels are modeled as a mass with a rectangular shape.
  */
-class Wheel
+class Wheel : public VisualObject
 {
    public:
-	Wheel();
+	Wheel(World* world);
 
 	/** Location of the wheel wrt the chassis ref point [m,rad] (in local
 	 * coords) */
 	double x = 0, y = -0.5, yaw = 0;
+
+	/** Pose of the wheel wrt the chassis ref point (in local coords) */
+	mrpt::math::TPose3D pose() const { return {x, y, 0, yaw, 0, 0}; }
 
 	/** Length(diameter) and width of the wheel rectangle [m] */
 	double diameter = .4, width = .2;
@@ -53,10 +58,18 @@ class Wheel
 		{"color", {"%color", &color}},
 		{"inertia", {"%lf", &Iyy}}};
 
+	/** Generates a human-readable description of the wheel parameters and
+	 * kinematic status */
+	std::string asString() const;
+
 	// methods ----
 
 	void getAs3DObject(mrpt::opengl::CSetOfObjects& obj);
 	void loadFromXML(const rapidxml::xml_node<char>* xml_node);
+
+	void internalGuiUpdate(
+		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
+		bool childrenOnly = false) override;
 
 	double getPhi() const
 	{
