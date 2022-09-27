@@ -25,9 +25,6 @@
 #if defined(MVSIM_HAS_ZMQ) && defined(MVSIM_HAS_PROTOBUF)
 
 #include <google/protobuf/text_format.h>
-
-#include <zmq.hpp>
-
 #include <mvsim/mvsim-msgs/AdvertiseServiceRequest.pb.h>
 #include <mvsim/mvsim-msgs/AdvertiseTopicRequest.pb.h>
 #include <mvsim/mvsim-msgs/CallService.pb.h>
@@ -43,6 +40,8 @@
 #include <mvsim/mvsim-msgs/SubscribeAnswer.pb.h>
 #include <mvsim/mvsim-msgs/SubscribeRequest.pb.h>
 #include <mvsim/mvsim-msgs/UnregisterNodeRequest.pb.h>
+
+#include <zmq.hpp>
 
 #endif
 
@@ -724,6 +723,17 @@ std::string Client::callService(
 	doCallService(
 		serviceName, inputSerializedMsg, std::nullopt, outMsgData, outMsgType);
 	return outMsgData;
+#endif
+	MRPT_END
+}
+/// Overload for python wrapper
+void Client::subscribeTopic(
+	const std::string& topicName,
+	const std::function<void(const std::string& /*serializedMsg*/)>& callback)
+{
+	MRPT_START
+#if defined(MVSIM_HAS_ZMQ) && defined(MVSIM_HAS_PROTOBUF)
+	THROW_EXCEPTION("TO DO");
 #endif
 	MRPT_END
 }
