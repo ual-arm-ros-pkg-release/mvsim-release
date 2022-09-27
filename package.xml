@@ -4,13 +4,8 @@
 <name>mvsim</name>
   <description>A lightweight multivehicle simulation framework.</description>
 
-  <!-- REMEMBER: Keep in synch version number in:
-    * package.xml
-    * CMakeLists.txt
-    * libmvsim/mvsim/mvsim_version.h
-    * CHANGELOG.rst
-   -->
-  <version>0.3.2</version>
+  <!-- All version numbers in CMake scripts are taken from this line: -->
+  <version>0.4.0</version>
 
   <maintainer email="jlblanco@ual.es">Jose-Luis Blanco-Claraco</maintainer>
   <license>BSD</license>
@@ -18,18 +13,16 @@
 
   <!-- COMMON DEPS -->
   <build_depend>ros_environment</build_depend>
-  
+
   <!-- BUILD TOOLS -->
   <buildtool_depend>cmake</buildtool_depend>
   <buildtool_depend condition="$ROS_VERSION == 1">catkin</buildtool_depend>
   <buildtool_depend condition="$ROS_VERSION == 2">ament_cmake_gtest</buildtool_depend>
   <buildtool_depend condition="$ROS_VERSION == 2">ament_cmake_gmock</buildtool_depend>
   <buildtool_depend condition="$ROS_VERSION == 2">ament_cmake</buildtool_depend>
-  
+
   <!-- COMMON DEPS -->
   <depend>mrpt2</depend>
-  <depend>std_msgs</depend>
-  <depend>dynamic_reconfigure</depend>
   <depend>sensor_msgs</depend>
   <depend>visualization_msgs</depend>
   <depend>nav_msgs</depend>
@@ -37,25 +30,21 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>box2d-dev</depend>
   <depend>libzmq3-dev</depend>
-  <depend>libzmqpp-dev</depend>
   <depend>boost</depend>
   <depend>pybind11-dev</depend>
   <depend>protobuf-dev</depend>
 
   <!-- ROS1 -->
   <depend           condition="$ROS_VERSION == 1">roscpp</depend>
+  <depend           condition="$ROS_VERSION == 1">dynamic_reconfigure</depend>
   <test_depend      condition="$ROS_VERSION == 1">gtest</test_depend>
-  <build_depend condition="$ROS_VERSION == 1">message_generation</build_depend>
-  <exec_depend  condition="$ROS_VERSION == 1">message_runtime</exec_depend>
   
   <!-- ROS2 -->
   <test_depend      condition="$ROS_VERSION == 2">ament_lint_auto</test_depend>
   <test_depend      condition="$ROS_VERSION == 2">ament_lint_common</test_depend>
   <build_depend     condition="$ROS_VERSION == 2">ament_cmake_xmllint</build_depend>
-  <build_depend    condition="$ROS_VERSION == 2">rosidl_default_generators</build_depend>
-  <exec_depend     condition="$ROS_VERSION == 2">rosidl_default_runtime</exec_depend>
-
-  <member_of_group condition="$ROS_VERSION == 2">rosidl_interface_packages</member_of_group>
+  <!-- to recognize launch files -->
+  <exec_depend      condition="$ROS_VERSION == 2">ros2launch</exec_depend>
 
   <export>
     <build_type condition="$ROS_VERSION == 1">catkin</build_type>
