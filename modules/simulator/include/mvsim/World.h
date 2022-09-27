@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include <Box2D/Dynamics/b2Body.h>
-#include <Box2D/Dynamics/b2World.h>
+#include <box2d/b2_body.h>
+#include <box2d/b2_world.h>
 #include <mrpt/core/bits_math.h>
 #include <mrpt/core/format.h>
 #include <mrpt/gui/CDisplayWindowGUI.h>
@@ -18,6 +18,7 @@
 #include <mrpt/img/TColor.h>
 #include <mrpt/math/TPoint3D.h>
 #include <mrpt/obs/CObservation.h>
+#include <mrpt/obs/CObservationImage.h>
 #include <mrpt/obs/obs_frwds.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTicTac.h>
@@ -54,6 +55,14 @@ class World : public mrpt::system::COutputLogger
 
 	/** Load an entire world description into this object from a specification
 	 * in XML format.
+	 * \param[in] xmlFileNamePath The relative or full path to the XML file.
+	 * \exception std::exception On any error, with what() giving a descriptive
+	 * error message
+	 */
+	void load_from_XML_file(const std::string& xmlFileNamePath);
+
+	/** Load an entire world description into this object from a specification
+	 * in XML format.
 	 * \param[in] fileNameForPath Optionally, provide the full path to an XML
 	 * file from which to take relative paths.
 	 * \exception std::exception On any error, with what() giving a descriptive
@@ -67,30 +76,33 @@ class World : public mrpt::system::COutputLogger
 	/** \name Simulation execution
 	  @{*/
 
-	double get_simul_time() const
-	{
-		return m_simul_time;
-	}  //!< Simulation wall-clock time
+	/** Seconds since start of simulation. \sa get_simul_timestamp() */
+	double get_simul_time() const { return m_simul_time; }
 
-	double get_simul_timestep() const
+	/** Get the current simulation full timestamp, computed as the
+	 *  real wall clock timestamp at the beginning of the simulation,
+	 *  plus the number of seconds simulation has run.
+	 *  \sa get_simul_time()
+	 */
+	mrpt::Clock::time_point get_simul_timestamp() const
 	{
-		return m_simul_timestep;
-	}  //!< Simulation fixed-time interval for numerical integration
-	void set_simul_timestep(double timestep)
-	{
-		m_simul_timestep = timestep;
-	}  //!< Simulation fixed-time interval for numerical integration
+		ASSERT_(m_simul_start_wallclock_time.has_value());
+		return mrpt::Clock::fromDouble(
+			m_simul_time + m_simul_start_wallclock_time.value());
+	}
 
-	double get_gravity() const
-	{
-		return m_gravity;
-	}  //!< Gravity acceleration (Default=9.8 m/s^2). Used to evaluate weights
-	   //! for friction, etc.
-	void set_gravity(double accel)
-	{
-		m_gravity = accel;
-	}  //!< Gravity acceleration (Default=9.8 m/s^2). Used to evaluate weights
-	   //! for friction, etc.
+	/// Simulation fixed-time interval for numerical integration
+	double get_simul_timestep() const { return m_simul_timestep; }
+	/// Simulation fixed-time interval for numerical integration
+	void set_simul_timestep(double timestep) { m_simul_timestep = timestep; }
+
+	/// Gravity acceleration (Default=9.8 m/s^2). Used to evaluate weights for
+	/// friction, etc.
+	double get_gravity() const { return m_gravity; }
+
+	/// Gravity acceleration (Default=9.8 m/s^2). Used to evaluate weights for
+	/// friction, etc.
+	void set_gravity(double accel) { m_gravity = accel; }
 
 	/** Runs the simulation for a given time interval (in seconds)
 	 * \note The minimum simulation time is the timestep set (e.g. via
@@ -140,8 +152,11 @@ class World : public mrpt::system::COutputLogger
 
 	/** If !=null, a set of objects to be rendered merged with the default
 	 * visualization. Lock the mutex m_gui_user_objects_mtx while writing.
+	 * There are two sets of objects: "viz" for visualization only, "physical"
+	 * for objects which should be detected by sensors.
 	 */
-	mrpt::opengl::CSetOfObjects::Ptr m_gui_user_objects;
+	mrpt::opengl::CSetOfObjects::Ptr m_gui_user_objects_physical,
+		m_gui_user_objects_viz;
 	std::mutex m_gui_user_objects_mtx;
 
 	void internalRunSensorsOn3DScene(
@@ -151,6 +166,29 @@ class World : public mrpt::system::COutputLogger
 		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical);
 	void internal_GUI_thread();
 	void internal_process_pending_gui_user_tasks();
+
+	std::mutex m_pendingRunSensorsOn3DSceneMtx;
+	bool m_pendingRunSensorsOn3DScene = false;
+
+	void mark_as_pending_running_sensors_on_3D_scene()
+	{
+		m_pendingRunSensorsOn3DSceneMtx.lock();
+		m_pendingRunSensorsOn3DScene = true;
+		m_pendingRunSensorsOn3DSceneMtx.unlock();
+	}
+	void clear_pending_running_sensors_on_3D_scene()
+	{
+		m_pendingRunSensorsOn3DSceneMtx.lock();
+		m_pendingRunSensorsOn3DScene = false;
+		m_pendingRunSensorsOn3DSceneMtx.unlock();
+	}
+	bool pending_running_sensors_on_3D_scene()
+	{
+		m_pendingRunSensorsOn3DSceneMtx.lock();
+		bool ret = m_pendingRunSensorsOn3DScene;
+		m_pendingRunSensorsOn3DSceneMtx.unlock();
+		return ret;
+	}
 
 	std::string m_gui_msg_lines;
 	std::mutex m_gui_msg_lines_mtx;
@@ -237,12 +275,16 @@ class World : public mrpt::system::COutputLogger
 
 	using vehicle_visitor_t = std::function<void(VehicleBase&)>;
 	using world_element_visitor_t = std::function<void(WorldElementBase&)>;
+	using block_visitor_t = std::function<void(Block&)>;
 
 	/** Run the user-provided visitor on each vehicle */
 	void runVisitorOnVehicles(const vehicle_visitor_t& v);
 
 	/** Run the user-provided visitor on each world element */
 	void runVisitorOnWorldElements(const world_element_visitor_t& v);
+
+	/** Run the user-provided visitor on each world block */
+	void runVisitorOnBlocks(const block_visitor_t& v);
 
 	/** @} */
 
@@ -307,13 +349,16 @@ class World : public mrpt::system::COutputLogger
 	/** In seconds, real simulation time since beginning (may be different than
 	 * wall-clock time because of time warp, etc.) */
 	double m_simul_time = 0;
+	std::optional<double> m_simul_start_wallclock_time;
 
 	/** Path from which to take relative directories. */
 	std::string m_base_path{"."};
 
 	/// This private container will be filled with objects in the public
 	/// m_gui_user_objects
-	mrpt::opengl::CSetOfObjects::Ptr m_glUserObjs =
+	mrpt::opengl::CSetOfObjects::Ptr m_glUserObjsPhysical =
+		mrpt::opengl::CSetOfObjects::Create();
+	mrpt::opengl::CSetOfObjects::Ptr m_glUserObjsViz =
 		mrpt::opengl::CSetOfObjects::Create();
 
 	// ------- GUI options -----
@@ -324,6 +369,7 @@ class World : public mrpt::system::COutputLogger
 		int refresh_fps = 20;
 		bool ortho = false;
 		bool show_forces = false;
+		bool show_sensor_points = true;
 		double force_scale = 0.01;	//!< In meters/Newton
 		double camera_distance = 80.0;
 		double fov_deg = 60.0;
@@ -335,6 +381,7 @@ class World : public mrpt::system::COutputLogger
 			{"win_h", {"%u", &win_h}},
 			{"ortho", {"%bool", &ortho}},
 			{"show_forces", {"%bool", &show_forces}},
+			{"show_sensor_points", {"%bool", &show_sensor_points}},
 			{"force_scale", {"%lf", &force_scale}},
 			{"fov_deg", {"%lf", &fov_deg}},
 			{"follow_vehicle", {"%s", &follow_vehicle}},
@@ -414,9 +461,14 @@ class World : public mrpt::system::COutputLogger
 	mrpt::opengl::COpenGLScene m_physical_objects;
 	std::recursive_mutex m_physical_objects_mtx;
 
-	void internal_gui_on_observation(const mrpt::obs::CObservation::Ptr& obs);
+	void internal_gui_on_observation(
+		const Simulable& veh, const mrpt::obs::CObservation::Ptr& obs);
 	void internal_gui_on_observation_3Dscan(
+		const Simulable& veh,
 		const std::shared_ptr<mrpt::obs::CObservation3DRangeScan>& obs);
+	void internal_gui_on_observation_image(
+		const Simulable& veh,
+		const std::shared_ptr<mrpt::obs::CObservationImage>& obs);
 
 	mrpt::math::TPoint2D internal_gui_on_image(
 		const std::string& label, const mrpt::img::CImage& im, int winPosX);
@@ -430,5 +482,10 @@ class World : public mrpt::system::COutputLogger
 
 	void process_load_walls(const rapidxml::xml_node<char>& node);
 	void insertBlock(const Block::Ptr& block);
+
+	/// This will parse a main XML file, or its included
+	void internal_recursive_parse_XML(
+		const void* /*rapidxml::xml_node<>* */ node,
+		const std::string& currentBasePath);
 };
 }  // namespace mvsim
