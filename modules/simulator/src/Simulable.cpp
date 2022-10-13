@@ -13,6 +13,9 @@
 #include <mvsim/TParameterDefinitions.h>
 #include <mvsim/World.h>
 
+#include <cmath>  // fmod()
+
+#include "JointXMLnode.h"
 #include "xml_utils.h"
 
 #if defined(MVSIM_HAS_ZMQ) && defined(MVSIM_HAS_PROTOBUF)
@@ -26,6 +29,22 @@ void Simulable::simul_pre_timestep(	 //
 	[[maybe_unused]] const TSimulContext& context)
 {
 	if (!m_b2d_body) return;
+
+	// Follow animation, if enabled:
+	if (m_anim_keyframes_path && !m_anim_keyframes_path->empty())
+	{
+		auto& poseSeq = m_anim_keyframes_path.value();
+
+		mrpt::math::TPose3D q;
+		bool interOk = false;
+		const double tMax = mrpt::Clock::toDouble(poseSeq.rbegin()->first);
+
+		poseSeq.interpolate(
+			mrpt::Clock::fromDouble(std::fmod(context.simul_time, tMax)), q,
+			interOk);
+
+		if (interOk) this->setPose(m_initial_q + q);
+	}
 
 	// Pos:
 	m_b2d_body->SetTransform(b2Vec2(m_q.x, m_q.y), m_q.yaw);
@@ -99,31 +118,86 @@ mrpt::poses::CPose2D Simulable::getCPose2D() const
 	return {m_q.x, m_q.y, m_q.yaw};
 }
 
-bool Simulable::parseSimulable(const rapidxml::xml_node<char>* node)
+bool Simulable::parseSimulable(const JointXMLnode<>& rootNode)
 {
 	MRPT_START
 
-	if (node == nullptr) return false;
+	using namespace rapidxml;
+	using namespace std::string_literals;
 
-	TParameterDefinitions params;
-	params["publish_pose_topic"] = TParamEntry("%s", &publishPoseTopic_);
-	params["publish_pose_period"] = TParamEntry("%lf", &publishPosePeriod_);
-
-	params["publish_relative_pose_topic"] =
-		TParamEntry("%s", &publishRelativePoseTopic_);
-	std::string listObjects;
-	params["publish_relative_pose_objects"] = TParamEntry("%s", &listObjects);
-
-	const std::map<std::string, std::string> varValues = {{"NAME", m_name}};
-
-	// Parse XML params:
-	parse_xmlnode_children_as_param(*node, params, varValues);
-
-	if (!listObjects.empty())
+	// -------------------------------------
+	// (Mandatory) initial pose:
+	// -------------------------------------
+	if (const xml_node<>* nPose = rootNode.first_node("init_pose"); nPose)
 	{
-		mrpt::system::tokenize(
-			mrpt::system::trim(listObjects), " ,",
-			publishRelativePoseOfOtherObjects_);
+		mrpt::math::TPose3D p;
+		if (3 != ::sscanf(nPose->value(), "%lf %lf %lf", &p.x, &p.y, &p.yaw))
+			THROW_EXCEPTION_FMT(
+				"Error parsing <init_pose>%s</init_pose>", nPose->value());
+		p.yaw *= M_PI / 180.0;	// deg->rad
+
+		this->setPose(p);
+		m_initial_q = p;  // save it for later usage in some animations, etc.
+	}
+	else
+	{
+		THROW_EXCEPTION(
+			"Missing required XML node <init_pose>x y phi</init_pose>");
+	}
+
+	// -------------------------------------
+	// (Optional) initial vel:
+	// -------------------------------------
+	if (const xml_node<>* nInitVel = rootNode.first_node("init_vel"); nInitVel)
+	{
+		mrpt::math::TTwist2D dq;
+		if (3 !=
+			::sscanf(
+				nInitVel->value(), "%lf %lf %lf", &dq.vx, &dq.vy, &dq.omega))
+			THROW_EXCEPTION_FMT(
+				"Error parsing <init_vel>%s</init_vel>", nInitVel->value());
+		dq.omega *= M_PI / 180.0;  // deg->rad
+
+		// Convert twist (velocity) from local -> global coords:
+		dq.rotate(this->getPose().yaw);
+		this->setTwist(dq);
+	}
+
+	// -------------------------------------
+	// Parse <publish> XML tag
+	// -------------------------------------
+	if (auto node = rootNode.first_node("publish"); node)
+	{
+		TParameterDefinitions params;
+		params["publish_pose_topic"] = TParamEntry("%s", &publishPoseTopic_);
+		params["publish_pose_period"] = TParamEntry("%lf", &publishPosePeriod_);
+
+		params["publish_relative_pose_topic"] =
+			TParamEntry("%s", &publishRelativePoseTopic_);
+		std::string listObjects;
+		params["publish_relative_pose_objects"] =
+			TParamEntry("%s", &listObjects);
+
+		const std::map<std::string, std::string> varValues = {{"NAME", m_name}};
+
+		parse_xmlnode_children_as_param(*node, params, varValues);
+
+		// Parse the "enabled" attribute:
+		{
+			bool publishEnabled = true;
+			TParameterDefinitions auxPar;
+			auxPar["enabled"] = TParamEntry("%bool", &publishEnabled);
+			parse_xmlnode_attribs(*node, auxPar, varValues);
+
+			// Reset publish topic if enabled==false
+			if (!publishEnabled) publishPoseTopic_.clear();
+		}
+
+		if (!listObjects.empty())
+		{
+			mrpt::system::tokenize(
+				mrpt::system::trim(listObjects), " ,",
+				publishRelativePoseOfOtherObjects_);
 
 #if 0
 		std::cout << "[DEBUG] "
@@ -132,12 +206,52 @@ bool Simulable::parseSimulable(const rapidxml::xml_node<char>* node)
 				  << listObjects << ") to topic " << publishRelativePoseTopic_
 				  << std::endl;
 #endif
+		}
+		ASSERT_(
+			(publishRelativePoseOfOtherObjects_.empty() &&
+			 publishRelativePoseTopic_.empty()) ||
+			(!publishRelativePoseOfOtherObjects_.empty() &&
+			 !publishRelativePoseTopic_.empty()));
+
+	}  // end <publish>
+
+	// Parse animation effects:
+	// ----------------------------
+	if (auto nAnim = rootNode.first_node("animation"); nAnim)
+	{
+		auto aType = nAnim->first_attribute("type");
+		ASSERTMSG_(aType, "<animation> tag requires a type=\"...\" attribute");
+		const std::string sType = aType->value();
+
+		if (sType == "keyframes")
+		{
+			auto& poseSeq = m_anim_keyframes_path.emplace();
+			poseSeq.setInterpolationMethod(mrpt::poses::imLinearSlerp);
+
+			for (auto n = nAnim->first_node(); n; n = n->next_sibling())
+			{
+				if (strcmp(n->name(), "time_pose") != 0)
+					continue;  // ignore unknowns
+
+				mrpt::math::TPose3D p;
+				double t = 0;
+				if (4 !=
+					::sscanf(
+						n->value(), "%lf %lf %lf %lf", &t, &p.x, &p.y, &p.yaw))
+					THROW_EXCEPTION_FMT(
+						"Error parsing <time_pose>:\n%s", n->value());
+				p.yaw *= M_PI / 180.0;	// deg->rad
+
+				poseSeq.insert(mrpt::Clock::fromDouble(t), p);
+			}
+
+			// m_anim_keyframes_path->saveToTextFile(m_name + "_path.txt"s);
+		}
+		else
+		{
+			THROW_EXCEPTION_FMT("Invalid animation type='%s'", sType.c_str());
+		}
 	}
-	ASSERT_(
-		(publishRelativePoseOfOtherObjects_.empty() &&
-		 publishRelativePoseTopic_.empty()) ||
-		(!publishRelativePoseOfOtherObjects_.empty() &&
-		 !publishRelativePoseTopic_.empty()));
 
 	return true;
 	MRPT_END

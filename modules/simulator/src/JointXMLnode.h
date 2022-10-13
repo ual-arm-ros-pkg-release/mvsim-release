@@ -10,11 +10,12 @@
 
 #include <rapidxml.hpp>
 #include <stdexcept>
+#include <vector>
 
 namespace mvsim
 {
 /** Proxy class to a set of XML nodes to appear as if they where one. */
-template <typename Ch = char>
+template <typename Ch>
 class JointXMLnode
 {
    public:
@@ -25,7 +26,8 @@ class JointXMLnode
 
    public:
 	void add(const rapidxml::xml_node<Ch>* node) { m_nodes.push_back(node); }
-	const rapidxml::xml_node<Ch>* first_node(const char* name)
+
+	const rapidxml::xml_node<Ch>* first_node(const char* name) const
 	{
 		const rapidxml::xml_node<Ch>* ret = nullptr;
 		for (const auto& node : m_nodes)
@@ -111,4 +113,5 @@ class JointXMLnode
 	iterator begin() { return iterator(*this); }
 	iterator end() { return iterator(*this, m_nodes.size()); }
 };
+
 }  // namespace mvsim
