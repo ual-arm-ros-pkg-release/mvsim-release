@@ -29,6 +29,7 @@
 
 #include "JointXMLnode.h"
 #include "XMLClassesRegistry.h"
+#include "parse_utils.h"
 #include "xml_utils.h"
 
 using namespace mvsim;
@@ -157,7 +158,7 @@ VehicleBase::Ptr VehicleBase::factory(
 			fileAttrb,
 			"XML tag '<include />' must have a 'file=\"xxx\"' attribute)");
 
-		const std::string relFile = fileAttrb->value();
+		const std::string relFile = mvsim::parse(fileAttrb->value(), {});
 		const auto absFile = parent->resolvePath(relFile);
 		parent->logStr(
 			mrpt::system::LVL_DEBUG,
@@ -171,7 +172,13 @@ VehicleBase::Ptr VehicleBase::factory(
 			vars[attr->name()] = attr->value();
 		}
 
-		const auto [xml, nRoot] = readXmlAndGetRoot(absFile, vars);
+		// Delay the replacement of this variable (used in Sensors) until "veh"
+		// is constructed and we actually have a name:
+		std::set<std::string> varsRetain = {
+			"NAME" /*sensor name*/, "PARENT_NAME" /*vehicle name*/};
+
+		const auto [xml, nRoot] = readXmlAndGetRoot(absFile, vars, varsRetain);
+
 		// the XML document object must exist during this whole function scope
 		scopedLifeDocs.emplace_back(xml);
 
@@ -240,47 +247,13 @@ VehicleBase::Ptr VehicleBase::factory(
 		}
 	}
 
-	// (Mandatory) initial pose:
-	{
-		const xml_node<>* node = veh_root_node.first_node("init_pose");
-		if (!node)
-			throw runtime_error(
-				"[VehicleBase::factory] Missing XML node <init_pose>");
-
-		mrpt::math::TPose3D p;
-		if (3 != ::sscanf(node->value(), "%lf %lf %lf", &p.x, &p.y, &p.yaw))
-			throw runtime_error(
-				"[VehicleBase::factory] Error parsing "
-				"<init_pose>...</init_pose>");
-		p.yaw *= M_PI / 180.0;	// deg->rad
-
-		veh->setPose(p);
-	}
-
-	// (Optional) initial vel:
-	{
-		const xml_node<>* node = veh_root_node.first_node("init_vel");
-		if (node)
-		{
-			mrpt::math::TTwist2D dq;
-			if (3 !=
-				::sscanf(
-					node->value(), "%lf %lf %lf", &dq.vx, &dq.vy, &dq.omega))
-				throw runtime_error(
-					"[VehicleBase::factory] Error parsing "
-					"<init_vel>...</init_vel>");
-			dq.omega *= M_PI / 180.0;  // deg->rad
-
-			// Convert twist (velocity) from local -> global coords:
-			dq.rotate(veh->getPose().yaw);
-			veh->setTwist(dq);
-		}
-	}
+	// Common setup for simulable objects:
+	// -----------------------------------------------------------
+	veh->parseSimulable(veh_root_node);
 
 	// Custom visualization 3D model:
 	// -----------------------------------------------------------
 	veh->parseVisual(veh_root_node.first_node("visual"));
-	veh->parseSimulable(veh_root_node.first_node("publish"));
 
 	// Initialize class-specific params (mass, chassis shape, etc.)
 	// ---------------------------------------------------------------
