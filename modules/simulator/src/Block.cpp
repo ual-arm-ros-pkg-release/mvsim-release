@@ -120,44 +120,13 @@ Block::Ptr Block::factory(World* parent, const rapidxml::xml_node<char>* root)
 		}
 	}
 
-	// (Mandatory) initial pose:
-	{
-		const xml_node<>* node = block_root_node.first_node("init_pose");
-		if (!node)
-			throw runtime_error(
-				"[Block::factory] Missing XML node <init_pose>");
-
-		mrpt::math::TPose3D q;
-		if (3 != ::sscanf(node->value(), "%lf %lf %lf", &q.x, &q.y, &q.yaw))
-			throw runtime_error(
-				"[Block::factory] Error parsing <init_pose>...</init_pose>");
-		q.yaw *= M_PI / 180.0;	// deg->rad
-		block->setPose(q);
-	}
-
-	// (Optional) initial vel:
-	{
-		const xml_node<>* node = block_root_node.first_node("init_vel");
-		if (node)
-		{
-			mrpt::math::TTwist2D dq;
-			if (3 !=
-				::sscanf(
-					node->value(), "%lf %lf %lf", &dq.vx, &dq.vy, &dq.omega))
-				throw runtime_error(
-					"[Block::factory] Error parsing <init_vel>...</init_vel>");
-			dq.omega *= M_PI / 180.0;  // deg->rad
-
-			// Convert twist (velocity) from local -> global coords:
-			dq.rotate(block->getPose().yaw);
-			block->setTwist(dq);
-		}
-	}
+	// Common setup for simulable objects:
+	// -----------------------------------------------------------
+	block->parseSimulable(block_root_node);
 
 	// Custom visualization 3D model:
 	// -----------------------------------------------------------
 	block->parseVisual(block_root_node.first_node("visual"));
-	block->parseSimulable(block_root_node.first_node("publish"));
 
 	// Params:
 	// -----------------------------------------------------------
