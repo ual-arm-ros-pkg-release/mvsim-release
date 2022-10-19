@@ -60,12 +60,23 @@ if (MVSIM_WITH_PYTHON)
 		set(Python3_VERSION_MAJOR ${Python_VERSION_MAJOR})
 		set(Python3_VERSION_MINOR ${Python_VERSION_MINOR})
 	endif()
+endif()
 
+if (MVSIM_WITH_PYTHON AND ("${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}" VERSION_LESS "3.8"))
+	set(MVSIM_WITH_PYTHON OFF CACHE BOOL "Build python wrappers" FORCE)
+	message(STATUS "*WARNING* Disabling Python wrappers: We require python >=3.8, but ${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR} was detected.")
+endif()
+
+if (MVSIM_WITH_PYTHON)
   # Enforce using python3:
   set(Python_ADDITIONAL_VERSIONS ${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR})
   set(PYBIND11_PYTHON_VERSION ${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR})
   find_package(pybind11 CONFIG)
-  set(MVSIM_PYTHON_BUILD_DIRECTORY ${mvsim_BINARY_DIR}/python)
+  
+  # The PYTHON build dir must be exactly at the same level than the root binary dir
+  # in order for the different build tools (debuild,...) pass the correct relative 
+  # path where to install the built python packages (e.g. under <build>/debian/tmp )
+  set(MVSIM_PYTHON_BUILD_DIRECTORY ${mvsim_BINARY_DIR})
 
   if (pybind11_FOUND AND pybind11_VERSION VERSION_LESS 2.2)
 	message(STATUS "Warning: Disabling Python bindings since pybind11 >=2.2 is required but only found version ${pybind11_VERSION}")
@@ -197,6 +208,38 @@ if (MVSIM_WITH_PROTOBUF)
   add_subdirectory(msgs)
 endif()
 
+# From: https://github.com/ament/ament_cmake/blob/rolling/ament_cmake_python/ament_cmake_python-extras.cmake
+macro(mvsim_ament_cmake_python_get_python_install_dir)
+  if(NOT DEFINED PYTHON_INSTALL_DIR)
+    # avoid storing backslash in cached variable since CMake will interpret it as escape character
+    set(_python_code
+      "import os"
+      "import sysconfig"
+      "print(os.path.relpath(sysconfig.get_path('purelib', vars={'base': '${CMAKE_INSTALL_PREFIX}'}), start='${CMAKE_INSTALL_PREFIX}').replace(os.sep, '/'))"
+    )
+    # JL Was: get_executable_path(_python_interpreter Python3::Interpreter CONFIGURE)
+	set(_python_interpreter ${Python3_EXECUTABLE})
+    execute_process(
+      COMMAND
+      "${_python_interpreter}"
+      "-c"
+      "${_python_code}"
+      OUTPUT_VARIABLE _output
+      RESULT_VARIABLE _result
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT _result EQUAL 0)
+      message(FATAL_ERROR
+        "execute_process(${_python_interpreter} -c '${_python_code}') returned "
+        "error code ${_result}")
+    endif()
+
+    set(PYTHON_INSTALL_DIR
+      "${_output}"
+      CACHE INTERNAL
+      "The directory for Python library installation. This needs to be in PYTHONPATH when 'setup.py install' is called.")
+  endif()
+endmacro()
 
 # ========================== Install Python libs ==========================
 if (pybind11_FOUND)
@@ -215,13 +258,25 @@ if (pybind11_FOUND)
 	  ${CMAKE_INSTALL_INCLUDEDIR}/mvsim/mvsim-msgs/
 	)
 
-	set(PYTHON_INSTALL_DIRECTORY "${Python3_SITELIB}"
-	CACHE PATH "Install prefix for python modules with 'make python-install'")
+	if (NOT DEFINED PYTHON_INSTALL_DIRECTORY)
+		set(PYTHON_INSTALL_DIRECTORY ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install prefix for python modules with 'make python-install'")
+	endif()
+
+	mvsim_ament_cmake_python_get_python_install_dir() # Gets PYTHON_INSTALL_DIR
+
+	# We need to do the install via a script run during "make install" so we can 
+	# catch the variable DESTDIR, used in debian builds:
+	configure_file(
+		${mvsim_SOURCE_DIR}/cmake/install-python.cmake.in
+		${mvsim_BINARY_DIR}/install-python.cmake
+		@ONLY
+	)
 
 	add_custom_target(python-install
-			COMMAND ${Python3_EXECUTABLE} ${MVSIM_PYTHON_BUILD_DIRECTORY}/setup.py install --root=${PYTHON_INSTALL_DIRECTORY}/.. --install-layout=deb --single-version-externally-managed
+			COMMAND ${CMAKE_COMMAND} -P ${mvsim_BINARY_DIR}/install-python.cmake
 			DEPENDS mvsim-msgs pymvsim_comms
-			WORKING_DIRECTORY ${MVSIM_PYTHON_BUILD_DIRECTORY})
+			COMMENT "Running 'python-install': ${_cmd}")
+	unset(_cmd)
 endif()
 
 # ========================== Show results ====================================
@@ -231,7 +286,7 @@ message(STATUS "BUILD_FOR_ROS  : ${BUILD_FOR_ROS} (ROS_VERSION: " $ENV{ROS_VERSI
 if (DETECTED_ROS1)
 	message(STATUS "  - catkin [req]              : ${catkin_FOUND}")
 	message(STATUS "  - dynamic_reconfigure [opt] : ${dynamic_reconfigure_FOUND}")
-	elseif(DETECTED_ROS2)
+elseif(DETECTED_ROS2)
 	message(STATUS "  - rclcpp [req]              : ${rclcpp_FOUND}")
 endif()
 
@@ -240,4 +295,11 @@ message(STATUS "Protobuf       : ${MVSIM_WITH_PROTOBUF} ${Protobuf_VERSION}")
 message(STATUS "ZeroMQ         : ${MVSIM_WITH_ZMQ} ${ZeroMQ_VERSION}")
 message(STATUS "Python wrappers: ${MVSIM_WITH_PYTHON} (pybind11: ${pybind11_VERSION})")
 message(STATUS "Python interp  : ${Python3_EXECUTABLE}")
+if ($ENV{VERBOSE})
+	message(STATUS "CMAKE_INSTALL_PREFIX     : ${CMAKE_INSTALL_PREFIX}")
+	message(STATUS "DESTDIR                  : ${DESTDIR}")
+	message(STATUS "Python3_SITELIB          : ${Python3_SITELIB}")
+	message(STATUS "PYTHON_INSTALL_DIRECTORY : ${PYTHON_INSTALL_DIRECTORY}")
+	message(STATUS "PYTHON_INSTALL_DIR       : ${PYTHON_INSTALL_DIR}")
+endif()
 message(STATUS "")
