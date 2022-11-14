@@ -77,7 +77,18 @@ class World : public mrpt::system::COutputLogger
 	  @{*/
 
 	/** Seconds since start of simulation. \sa get_simul_timestamp() */
-	double get_simul_time() const { return m_simul_time; }
+	double get_simul_time() const
+	{
+		auto lck = mrpt::lockHelper(m_simul_time_mtx);
+		return m_simul_time;
+	}
+
+	/// Normally should not be called by users, for internal use only.
+	void force_set_simul_time(double newSimulatedTime)
+	{
+		auto lck = mrpt::lockHelper(m_simul_time_mtx);
+		m_simul_time = newSimulatedTime;
+	}
 
 	/** Get the current simulation full timestamp, computed as the
 	 *  real wall clock timestamp at the beginning of the simulation,
@@ -86,14 +97,18 @@ class World : public mrpt::system::COutputLogger
 	 */
 	mrpt::Clock::time_point get_simul_timestamp() const
 	{
+		auto lck = mrpt::lockHelper(m_simul_time_mtx);
 		ASSERT_(m_simul_start_wallclock_time.has_value());
 		return mrpt::Clock::fromDouble(
 			m_simul_time + m_simul_start_wallclock_time.value());
 	}
 
 	/// Simulation fixed-time interval for numerical integration
-	double get_simul_timestep() const { return m_simul_timestep; }
+	double get_simul_timestep() const;
+
 	/// Simulation fixed-time interval for numerical integration
+	/// `0` means auto-determine as the minimum of 50 ms and the shortest sensor
+	/// sample period.
 	void set_simul_timestep(double timestep) { m_simul_timestep = timestep; }
 
 	/// Gravity acceleration (Default=9.8 m/s^2). Used to evaluate weights for
@@ -197,7 +212,21 @@ class World : public mrpt::system::COutputLogger
 
 	std::atomic_bool m_gui_thread_running = false;
 	std::atomic_bool m_gui_thread_must_close = false;
-	std::mutex m_gui_thread_start_mtx;
+	mutable std::mutex m_gui_thread_start_mtx;
+
+	bool gui_thread_must_close() const
+	{
+		m_gui_thread_start_mtx.lock();
+		const bool v = m_gui_thread_must_close;
+		m_gui_thread_start_mtx.unlock();
+		return v;
+	}
+	void gui_thread_must_close(bool value)
+	{
+		m_gui_thread_start_mtx.lock();
+		m_gui_thread_must_close = value;
+		m_gui_thread_start_mtx.unlock();
+	}
 
 	void enqueue_task_to_run_in_gui_thread(const std::function<void(void)>& f)
 	{
@@ -330,11 +359,14 @@ class World : public mrpt::system::COutputLogger
 	 * friction, etc. */
 	double m_gravity = 9.81;
 
-	/** Simulation fixed-time interval for numerical integration.*/
-	double m_simul_timestep = 10e-3;
+	/** Simulation fixed-time interval for numerical integration.
+	 * `0` means auto-determine as the minimum of 50 ms and the shortest sensor
+	 * sample period.
+	 */
+	mutable double m_simul_timestep = 0;
 
 	/** Velocity and position iteration count (refer to libbox2d docs) */
-	int m_b2d_vel_iters = 6, m_b2d_pos_iters = 3;
+	int m_b2d_vel_iters = 8, m_b2d_pos_iters = 3;
 
 	std::string m_server_address = "localhost";
 
@@ -350,6 +382,7 @@ class World : public mrpt::system::COutputLogger
 	 * wall-clock time because of time warp, etc.) */
 	double m_simul_time = 0;
 	std::optional<double> m_simul_start_wallclock_time;
+	std::mutex m_simul_time_mtx;
 
 	/** Path from which to take relative directories. */
 	std::string m_base_path{"."};
@@ -460,6 +493,16 @@ class World : public mrpt::system::COutputLogger
 	/// to see visualization marks, etc.
 	mrpt::opengl::COpenGLScene m_physical_objects;
 	std::recursive_mutex m_physical_objects_mtx;
+
+	/// Updated in internal_one_step()
+	std::map<std::string, mrpt::math::TPose3D> m_copy_of_objects_dynstate_pose;
+	std::map<std::string, mrpt::math::TTwist2D>
+		m_copy_of_objects_dynstate_twist;
+	std::set<std::string> m_copy_of_objects_had_collision;
+	std::recursive_mutex m_copy_of_objects_dynstate_mtx;
+
+	std::set<std::string> m_reset_collision_flags;
+	std::mutex m_reset_collision_flags_mtx;
 
 	void internal_gui_on_observation(
 		const Simulable& veh, const mrpt::obs::CObservation::Ptr& obs);

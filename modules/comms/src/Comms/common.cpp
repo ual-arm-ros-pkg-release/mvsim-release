@@ -27,7 +27,7 @@ void mvsim::sendMessage(
 	arch << m.SerializeAsString();
 
 	zmq::message_t msg(buf.getRawBufferData(), buf.getTotalBytesCount());
-#if ZMQ_VERSION >= ZMQ_MAKE_VERSION(4, 3, 1)
+#if CPPZMQ_VERSION >= ZMQ_MAKE_VERSION(4, 3, 1)
 	socket.send(msg, zmq::send_flags::none);
 #else
 	socket.send(msg);
@@ -57,7 +57,8 @@ void mvsim::parseMessage(
 	bool ok = out.ParseFromString(serializedData);
 	if (!ok)
 		THROW_EXCEPTION_FMT(
-			"Format error: protobuf could not decode binary message of type "
+			"Format error: protobuf could not decode binary message of "
+			"type "
 			"'%s'",
 			typeName.c_str());
 }
@@ -65,7 +66,7 @@ void mvsim::parseMessage(
 zmq::message_t mvsim::receiveMessage(zmq::socket_t& s)
 {
 	zmq::message_t m;
-#if ZMQ_VERSION >= ZMQ_MAKE_VERSION(4, 3, 1)
+#if CPPZMQ_VERSION >= ZMQ_MAKE_VERSION(4, 3, 1)
 	std::optional<size_t> msgSize = s.recv(m);
 	ASSERT_(msgSize.has_value());
 #else
@@ -76,11 +77,15 @@ zmq::message_t mvsim::receiveMessage(zmq::socket_t& s)
 
 std::string mvsim::get_zmq_endpoint(const zmq::socket_t& s)
 {
+#if CPPZMQ_VERSION > ZMQ_MAKE_VERSION(4, 7, 0)
+	return s.get(zmq::sockopt::last_endpoint);
+#else
 	char assignedPort[200];
 	size_t assignedPortLen = sizeof(assignedPort);
-	s.getsockopt(ZMQ_LAST_ENDPOINT, assignedPort, &assignedPortLen);
+	s.getsockopt(ZMQ_LAST_ENDPOINT, &assignedPort, &assignedPortLen);
 	assignedPort[assignedPortLen] = '\0';
 	return {assignedPort};
+#endif
 }
 
 #endif
