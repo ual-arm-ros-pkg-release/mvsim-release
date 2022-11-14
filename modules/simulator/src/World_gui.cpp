@@ -8,6 +8,7 @@
   +-------------------------------------------------------------------------+ */
 
 #include <mrpt/core/format.h>
+#include <mrpt/core/get_env.h>
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/core/round.h>
 #include <mrpt/math/TLine3D.h>
@@ -61,6 +62,8 @@ void World::GUI::prepare_control_window()
 
 	w->add<nanogui::Button>("Quit", ENTYPO_ICON_ARROW_BOLD_LEFT)
 		->setCallback([this]() {
+			m_parent.gui_thread_must_close(true);
+
 			gui_win->setVisible(false);
 			nanogui::leave();
 		});
@@ -168,9 +171,9 @@ void World::GUI::prepare_editor_window()
 	{
 		auto tab = w->add<nanogui::TabWidget>();
 
-		nanogui::Widget* tabs[3] = {
+		nanogui::Widget* tabs[4] = {
 			tab->createTab("Vehicles"), tab->createTab("Blocks"),
-			tab->createTab("Elements")};
+			tab->createTab("Elements"), tab->createTab("Misc.")};
 
 		tab->setActiveTab(0);
 
@@ -179,17 +182,18 @@ void World::GUI::prepare_editor_window()
 				nanogui::Orientation::Vertical, nanogui::Alignment::Minimum, 3,
 				3));
 
-		nanogui::VScrollPanel* vscrolls[3] = {
+		nanogui::VScrollPanel* vscrolls[4] = {
 			tabs[0]->add<nanogui::VScrollPanel>(),
 			tabs[1]->add<nanogui::VScrollPanel>(),
-			tabs[2]->add<nanogui::VScrollPanel>()};
+			tabs[2]->add<nanogui::VScrollPanel>(),
+			tabs[3]->add<nanogui::VScrollPanel>()};
 
 		for (auto vs : vscrolls) vs->setFixedSize({pnWidth, pnHeight});
 
 		// vscroll should only have *ONE* child. this is what `wrapper`
 		// is for
-		nanogui::Widget* wrappers[3];
-		for (int i = 0; i < 3; i++)
+		nanogui::Widget* wrappers[4];
+		for (int i = 0; i < 4; i++)
 		{
 			wrappers[i] = vscrolls[i]->add<nanogui::Widget>();
 			wrappers[i]->setFixedSize({pnWidth, pnHeight});
@@ -254,6 +258,33 @@ void World::GUI::prepare_editor_window()
 				for (auto b : btns_selectedOps) b->setEnabled(btnsEnabled);
 			});
 		}
+
+		// "misc." tab
+		// --------------
+		wrappers[3]
+			->add<nanogui::Button>("Save 3D scene...", ENTYPO_ICON_EXPORT)
+			->setCallback([this]() {
+				try
+				{
+					const std::string outFile = nanogui::file_dialog(
+						{{"3Dscene", "MRPT 3D scene file (*.3Dsceme)"}},
+						true /*save*/);
+					if (outFile.empty()) return;
+
+					auto lck =
+						mrpt::lockHelper(m_parent.physical_objects_mtx());
+					m_parent.m_physical_objects.saveToFile(outFile);
+
+					std::cout << "[mvsim gui] Saved world scene to: " << outFile
+							  << std::endl;
+				}
+				catch (const std::exception& e)
+				{
+					std::cerr
+						<< "[mvsim gui] Exception while saving 3D scene:\n"
+						<< e.what() << std::endl;
+				}
+			});
 	}
 
 	w->add<nanogui::Label>(" ");
@@ -454,7 +485,7 @@ void World::internal_GUI_thread()
 		// The GUI must be closed from this same thread. Use a shared atomic
 		// bool:
 		auto lambdaLoopCallback = [](World& me) {
-			if (me.m_gui_thread_must_close) nanogui::leave();
+			if (me.gui_thread_must_close()) nanogui::leave();
 
 			// Update all GUI elements:
 			ASSERT_(me.m_gui.gui_win->background_scene);
@@ -521,9 +552,12 @@ void World::internal_GUI_thread()
 
 		MRPT_LOG_DEBUG("[World::internal_GUI_thread] Mainloop ended.");
 
-		// Make sure opengl resources are freed from this thread, not from the
-		// main one upon destruction of the last ref to shared_ptr's to opengl
-		// classes.
+		// to let other threads know that we are closing:
+		gui_thread_must_close(true);
+
+		// Make sure opengl resources are freed from this thread, not from
+		// the main one upon destruction of the last ref to shared_ptr's to
+		// opengl classes.
 		{
 			auto lck = mrpt::lockHelper(m_gui.gui_win->background_scene_mtx);
 			if (m_gui.gui_win->background_scene)
@@ -680,7 +714,7 @@ void World::internalUpdate3DSceneObjects(
 		if (m_gui.lbCpuUsage)
 			m_gui.lbCpuUsage->setCaption(mrpt::format(
 				"Time: %s (CPU usage: %.03f%%)",
-				mrpt::system::formatTimeInterval(this->m_simul_time).c_str(),
+				mrpt::system::formatTimeInterval(get_simul_time()).c_str(),
 				cpu_usage_ratio * 100.0));
 
 		// User supplied-lines:
@@ -743,7 +777,12 @@ void World::update_GUI(TUpdateGUIParams* guiparams)
 #if MRPT_VERSION >= 0x204
 			mrpt::system::thread_name("guiThread", m_gui_thread);
 #endif
-			for (int timeout = 0; timeout < 300; timeout++)
+
+			const int MVSIM_OPEN_GUI_TIMEOUT_MS =
+				mrpt::get_env<int>("MVSIM_OPEN_GUI_TIMEOUT_MS", 3000);
+
+			for (int timeout = 0; timeout < MVSIM_OPEN_GUI_TIMEOUT_MS / 10;
+				 timeout++)
 			{
 				std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				if (m_gui_thread_running) break;
