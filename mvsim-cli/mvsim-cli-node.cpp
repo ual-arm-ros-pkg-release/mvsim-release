@@ -14,14 +14,14 @@
 static int printCommandsNode(bool showErrorMsg);
 static int nodeList();
 
-static const std::map<std::string, cmd_t> cliNodeCommands = {
+const std::map<std::string, cmd_t> cliNodeCommands = {
 	{"list", cmd_t(&nodeList)},
 };
 
 int commandNode()
 {
-	const auto& lstCmds = argCmd.getValue();
-	if (argHelp.isSet()) return printCommandsNode(false);
+	const auto& lstCmds = cli->argCmd.getValue();
+	if (cli->argHelp.isSet()) return printCommandsNode(false);
 	if (lstCmds.size() != 2) return printCommandsNode(true);
 
 	// Take second unlabeled argument:
@@ -40,7 +40,7 @@ int nodeList()
 
 	client.setMinLoggingLevel(
 		mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
-			argVerbosity.getValue()));
+			cli->argVerbosity.getValue()));
 
 	std::cout << "# Connecting to server...\n";
 	client.connect();
