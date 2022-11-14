@@ -12,6 +12,7 @@
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/opengl/stock_objects.h>
 #include <mrpt/random.h>
+#include <mrpt/version.h>
 #include <mvsim/Sensors/CameraSensor.h>
 #include <mvsim/VehicleBase.h>
 #include <mvsim/World.h>
@@ -163,7 +164,10 @@ void CameraSensor::simulateOn3DScene(mrpt::opengl::COpenGLScene& world3DScene)
 {
 	using namespace mrpt;  // _deg
 
-	if (!m_has_to_render.has_value()) return;
+	{
+		auto lckHasTo = mrpt::lockHelper(m_has_to_render_mtx);
+		if (!m_has_to_render.has_value()) return;
+	}
 
 	auto tleWhole =
 		mrpt::system::CTimeLoggerEntry(m_world->getTimeLogger(), "sensor.RGB");
@@ -180,13 +184,28 @@ void CameraSensor::simulateOn3DScene(mrpt::opengl::COpenGLScene& world3DScene)
 
 	// Create FBO on first use, now that we are here at the GUI / OpenGL thread.
 	if (!m_fbo_renderer_rgb)
+	{
+#if MRPT_VERSION < 0x256
 		m_fbo_renderer_rgb = std::make_shared<mrpt::opengl::CFBORender>(
 			m_sensor_params.cameraParams.ncols,
 			m_sensor_params.cameraParams.nrows, true /* skip GLUT window */);
+#else
+		mrpt::opengl::CFBORender::Parameters p;
+		p.width = m_sensor_params.cameraParams.ncols;
+		p.height = m_sensor_params.cameraParams.nrows;
+		p.create_EGL_context = false;  // reuse nanogui context
+
+		m_fbo_renderer_rgb = std::make_shared<mrpt::opengl::CFBORender>(p);
+#endif
+	}
 
 	auto viewport = world3DScene.getViewport();
 
+#if MRPT_VERSION < 0x256
 	auto& cam = viewport->getCamera();
+#else
+	auto& cam = m_fbo_renderer_rgb->getCamera(world3DScene);
+#endif
 
 	const auto fixedAxisConventionRot =
 		mrpt::poses::CPose3D(0, 0, 0, -90.0_deg, 0.0_deg, -90.0_deg);
@@ -229,12 +248,15 @@ void CameraSensor::simulateOn3DScene(mrpt::opengl::COpenGLScene& world3DScene)
 		m_last_obs2gui = m_last_obs;
 	}
 
-	SensorBase::reportNewObservation(m_last_obs, *m_has_to_render);
+	{
+		auto lckHasTo = mrpt::lockHelper(m_has_to_render_mtx);
+		SensorBase::reportNewObservation(m_last_obs, *m_has_to_render);
 
-	if (m_glCustomVisual) m_glCustomVisual->setVisibility(true);
+		if (m_glCustomVisual) m_glCustomVisual->setVisibility(true);
 
-	m_gui_uptodate = false;
-	m_has_to_render.reset();
+		m_gui_uptodate = false;
+		m_has_to_render.reset();
+	}
 }
 
 // Simulate sensor AFTER timestep, with the updated vehicle dynamical state:
