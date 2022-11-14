@@ -239,8 +239,23 @@ void SensorBase::make_sure_we_have_a_name(const std::string& prefix)
 
 bool SensorBase::should_simulate_sensor(const TSimulContext& context)
 {
-	if (context.simul_time < m_sensor_last_timestamp + m_sensor_period)
+	// to fix edge cases with sensor period a multiple of simulation timestep:
+	const double timeEpsilon = 1e-6;
+
+	if (context.simul_time <
+		m_sensor_last_timestamp + m_sensor_period - timeEpsilon)
 		return false;
+
+	if ((context.simul_time - m_sensor_last_timestamp) >= 2 * m_sensor_period)
+	{
+		std::cout
+			<< "[mvsim::SensorBase] WARNING: "
+			   "At least one sensor sample has been lost due to too coarse "
+			   "discrete time steps. sensor_period="
+			<< m_sensor_period << " [s], (simul_time - sensor_last_timestamp)="
+			<< (context.simul_time - m_sensor_last_timestamp) << " [s]."
+			<< std::endl;
+	}
 
 	m_sensor_last_timestamp = context.simul_time;
 	m_vehicle_pose_at_last_timestamp =
