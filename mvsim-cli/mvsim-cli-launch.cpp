@@ -39,6 +39,7 @@ struct TThreadParams
    private:
 	bool closing_ = false;
 };
+
 static void mvsim_server_thread_update_GUI(TThreadParams& thread_params);
 mvsim::World::TGUIKeyEvent gui_key_events;
 std::mutex gui_key_events_mtx;
@@ -50,10 +51,10 @@ int launchSimulation()
 
 	// check args:
 	bool badArgs = false;
-	const auto& unlabeledArgs = argCmd.getValue();
+	const auto& unlabeledArgs = cli->argCmd.getValue();
 	if (unlabeledArgs.size() != 2) badArgs = true;
 
-	if (argHelp.isSet() || badArgs)
+	if (cli->argHelp.isSet() || badArgs)
 	{
 		fprintf(
 			stdout,
@@ -75,9 +76,10 @@ Available options:
 
 	world.setMinLoggingLevel(
 		mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
-			argVerbosity.getValue()));
+			cli->argVerbosity.getValue()));
 
-	if (argFullProfiler.isSet()) world.getTimeLogger().enableKeepWholeHistory();
+	if (cli->argFullProfiler.isSet())
+		world.getTimeLogger().enableKeepWholeHistory();
 
 	// Load from XML:
 	rapidxml::file<> fil_xml(sXMLfilename.c_str());
@@ -93,28 +95,28 @@ Available options:
 		std::thread(&mvsim_server_thread_update_GUI, std::ref(thread_params));
 
 	// Run simulation:
-	mrpt::system::CTicTac tictac;
-	double t_old = tictac.Tac();
-	double REALTIME_FACTOR = 1.0;
-	bool do_exit = false;
-	size_t teleop_idx_veh = 0;	// Index of the vehicle to teleop
+	const double tAbsInit = mrpt::Clock::nowDouble();
+	// double REALTIME_FACTOR = 1.0;
+	bool doExit = false;
+	size_t teleopIdxVeh = 0;  // Index of the vehicle to teleop
 
-	while (!do_exit && !mrpt::system::os::kbhit())
+	while (!doExit && !mrpt::system::os::kbhit())
 	{
+		// was the quit button hit in the GUI?
+		if (world.gui_thread_must_close()) break;
+
 		// Simulation
 		// ============================================================
 		// Compute how much time has passed to simulate in real-time:
-		double t_new = tictac.Tac();
-		double incr_time = REALTIME_FACTOR * (t_new - t_old);
+		double tNew = mrpt::Clock::nowDouble();
+		double incrTime = (tNew - tAbsInit) - world.get_simul_time();
+		int incrTimeSteps =
+			static_cast<int>(std::floor(incrTime / world.get_simul_timestep()));
 
-		// Just in case the computer is *really fast*...
-		if (incr_time >= world.get_simul_timestep())
+		// Simulate:
+		if (incrTimeSteps > 0)
 		{
-			// Simulate:
-			world.run_simulation(incr_time);
-
-			// t_old_simul = world.get_simul_time();
-			t_old = t_new;
+			world.run_simulation(incrTimeSteps * world.get_simul_timestep());
 		}
 
 		// I could use 10ms here but chono literals are since gcc 4.9.3
@@ -132,7 +134,7 @@ Available options:
 		switch (keyevent.keycode)
 		{
 			case GLFW_KEY_ESCAPE:
-				do_exit = true;
+				doExit = true;
 				break;
 			case '1':
 			case '2':
@@ -140,21 +142,21 @@ Available options:
 			case '4':
 			case '5':
 			case '6':
-				teleop_idx_veh = keyevent.keycode - '1';
+				teleopIdxVeh = keyevent.keycode - '1';
 				break;
 		};
 
-		{  // Test: Differential drive: Control raw forces
+		{
 			const World::VehicleList& vehs = world.getListOfVehicles();
 			txt2gui_tmp += mrpt::format(
 				"Selected vehicle: %u/%u\n",
-				static_cast<unsigned>(teleop_idx_veh + 1),
+				static_cast<unsigned>(teleopIdxVeh + 1),
 				static_cast<unsigned>(vehs.size()));
-			if (vehs.size() > teleop_idx_veh)
+			if (vehs.size() > teleopIdxVeh)
 			{
 				// Get iterator to selected vehicle:
 				World::VehicleList::const_iterator it_veh = vehs.begin();
-				std::advance(it_veh, teleop_idx_veh);
+				std::advance(it_veh, teleopIdxVeh);
 
 				// Get speed: ground truth
 				{
@@ -198,7 +200,7 @@ Available options:
 
 	thread_params.closing(true);
 
-	thGUI.join();  // TODO: It could break smth
+	if (thGUI.joinable()) thGUI.join();
 
 	// save full profiling, if enabled:
 	if (world.getTimeLogger().isEnabledKeepWholeHistory())
