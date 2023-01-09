@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -95,7 +95,7 @@ struct InfoPerSubscribedTopic
 struct Client::ZMQImpl
 {
 #if defined(MVSIM_HAS_ZMQ)
-	zmq::context_t context{2, ZMQ_MAX_SOCKETS_DFLT};
+	zmq::context_t context{2 /* io sockets */, ZMQ_MAX_SOCKETS_DFLT};
 	std::optional<zmq::socket_t> mainReqSocket;
 	std::recursive_mutex mainReqSocketMtx;
 	mvsim::SocketMonitor mainReqSocketMonitor;
@@ -543,9 +543,7 @@ void Client::publishTopic(
 	mvsim::sendMessage(msg, ipat.pubSocket);
 
 #if 0
-	MRPT_LOG_DEBUG_FMT(
-		"Published on topic `%s`: %s", topicName.c_str(),
-		msg.DebugString().c_str());
+	std::cout << "Published on topic " << topicName << std::endl;
 #endif
 
 #else
@@ -661,7 +659,7 @@ void Client::internalTopicUpdatesThread()
 			// past.
 
 			// Look for the entry in the list of subscribed topics:
-			std::shared_lock<std::shared_mutex> lck(zmq_->subscribedTopics_mtx);
+			std::unique_lock<std::shared_mutex> lck(zmq_->subscribedTopics_mtx);
 			const auto& topicName = tiMsg.topicname();
 
 			auto itTopic = zmq_->subscribedTopics.find(topicName);
@@ -736,11 +734,19 @@ std::string Client::callService(
 /// Overload for python wrapper
 void Client::subscribeTopic(
 	const std::string& topicName,
-	const std::function<void(const std::string& /*serializedMsg*/)>& callback)
+	const std::function<void(
+		const std::string& /*msgType*/,
+		const std::vector<uint8_t>& /*serializedMsg*/)>& callback)
 {
 	MRPT_START
 #if defined(MVSIM_HAS_ZMQ) && defined(MVSIM_HAS_PROTOBUF)
-	THROW_EXCEPTION("TO DO");
+
+	subscribe_topic_raw(topicName, [callback](const zmq::message_t& m) {
+		const auto [sType, sData] = mvsim::internal::parseMessageToParts(m);
+		std::vector<uint8_t> d(sData.size());
+		::memcpy(d.data(), sData.data(), sData.size());
+		callback(sType, d);
+	});
 #endif
 	MRPT_END
 }
@@ -756,8 +762,15 @@ void Client::doCallService(
 	mrpt::system::CTimeLoggerEntry tle(profiler_, "doCallService");
 
 	// 1) Request to the server who is serving this service:
-	// TODO: Cache?
 	std::string srvEndpoint;
+
+	auto lckCache = mrpt::lockHelper(serviceToEndPointCacheMtx_);
+	if (auto it = serviceToEndPointCache_.find(serviceName);
+		it != serviceToEndPointCache_.end())
+	{
+		srvEndpoint = it->second;
+	}
+	else
 	{
 		mrpt::system::CTimeLoggerEntry tle2(profiler_, "doCallService.getinfo");
 
@@ -778,7 +791,10 @@ void Client::doCallService(
 				serviceName.c_str(), gsia.errormessage().c_str());
 
 		srvEndpoint = gsia.serviceendpoint();
+
+		serviceToEndPointCache_[serviceName] = srvEndpoint;
 	}
+	lckCache.unlock();
 
 	// 2) Connect to the service offerrer and request the execution:
 	zmq::socket_t srvReqSock(zmq_->context, ZMQ_REQ);
@@ -890,7 +906,7 @@ void Client::internalTopicSubscribeThread(internal::InfoPerSubscribedTopic& ipt)
 			// Send to subscriber callbacks:
 			try
 			{
-				for (auto callback : ipt.callbacks) callback(m);
+				for (const auto& callback : ipt.callbacks) callback(m);
 			}
 			catch (const std::exception& e)
 			{
