@@ -3,7 +3,7 @@
 # |                                                                         |
 # |  https://github.com/ual-arm-ros-pkg/multivehicle-simulator              |
 # |                                                                         |
-# | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+# | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
 # | Distributed under 3-clause BSD License                                  |
 # |   See COPYING                                                           |
 # +-------------------------------------------------------------------------+
@@ -112,7 +112,7 @@ if (BUILD_FOR_ROS AND DETECTED_ROS1)
 		roscpp tf2 dynamic_reconfigure std_msgs nav_msgs sensor_msgs visualization_msgs
 		tf2_geometry_msgs
 	)
-	find_package(mrpt-ros1bridge REQUIRED)
+	find_package(mrpt-ros1bridge 2.5.6 REQUIRED)
 
 	#add dynamic reconfigure api
 	if (dynamic_reconfigure_FOUND)
@@ -154,8 +154,7 @@ if (BUILD_FOR_ROS AND DETECTED_ROS2)
 	find_package(visualization_msgs REQUIRED)
 	find_package(tf2_geometry_msgs REQUIRED)
 
-	find_package(mrpt-ros2bridge REQUIRED)
-
+	find_package(mrpt-ros2bridge 2.5.6 REQUIRED)
 endif()
 
 
@@ -203,13 +202,14 @@ if(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   add_compile_options(-O3)
 endif()
 
-# --------------------------
+# ----------------------------------------------------------
 # Dependency: MRPT
-# --------------------------
-find_package(mrpt-maps REQUIRED)
-find_package(mrpt-tclap REQUIRED)
-find_package(mrpt-gui REQUIRED)
-find_package(mrpt-tfest REQUIRED)
+# Use the first cmd to set the minimum required version
+# ----------------------------------------------------------
+find_package(mrpt-maps 2.5.6 REQUIRED)
+find_package(mrpt-tclap 2.5.6 REQUIRED)
+find_package(mrpt-gui 2.5.6 REQUIRED)
+find_package(mrpt-tfest 2.5.6 REQUIRED)
 
 # --------------------------
 # Dependency: Box2D
@@ -422,7 +422,11 @@ if (BUILD_FOR_ROS)
 		#ament_export_targets(export_${PROJECT_NAME})
 		ament_package()
 	endif()
-
-	
 endif() # BUILD_FOR_ROS
+
+option(MVSIM_UNIT_TESTS "Build and run MVSIM unit tests (requires Python and ZMQ)" ON)
+if (MVSIM_UNIT_TESTS AND MVSIM_WITH_PYTHON AND MVSIM_WITH_ZMQ)
+	enable_testing()  # This must be in the root cmake file
+	add_subdirectory(tests)
+endif()
 

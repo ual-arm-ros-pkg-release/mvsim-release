@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -13,6 +13,7 @@
 #include <mvsim/WorldElements/HorizontalPlane.h>
 #include <mvsim/WorldElements/OccupancyGridMap.h>
 #include <mvsim/WorldElements/PointCloud.h>
+#include <mvsim/WorldElements/VerticalPlane.h>
 
 #include <map>
 #include <rapidxml.hpp>
@@ -39,6 +40,7 @@ void register_all_world_elements()
 	REGISTER_WORLD_ELEMENT("occupancy_grid", OccupancyGridMap)
 	REGISTER_WORLD_ELEMENT("elevation_map", ElevationMap)
 	REGISTER_WORLD_ELEMENT("horizontal_plane", HorizontalPlane)
+	REGISTER_WORLD_ELEMENT("vertical_plane", VerticalPlane)
 	REGISTER_WORLD_ELEMENT("pointcloud", PointCloud)
 }
 
