@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <mrpt/core/optional_ref.h>
 #include <mrpt/opengl/opengl_frwds.h>
 #include <mrpt/poses/CPose3D.h>
 #include <mvsim/basic_types.h>
@@ -28,21 +29,24 @@ class VisualObject
 	VisualObject(
 		World* parent, bool insertCustomVizIntoViz = true,
 		bool insertCustomVizIntoPhysical = true)
-		: m_world(parent),
-		  m_insertCustomVizIntoViz(insertCustomVizIntoViz),
-		  m_insertCustomVizIntoPhysical(insertCustomVizIntoPhysical)
+		: world_(parent),
+		  insertCustomVizIntoViz_(insertCustomVizIntoViz),
+		  insertCustomVizIntoPhysical_(insertCustomVizIntoPhysical)
 	{
 	}
 
 	virtual ~VisualObject();
 
-	/** Must create a new object in the scene and/or update it according to the
-	 * current state */
+	/** This creates a new object in the scene and/or update it according to the
+	 * current state of the object. If none of the scenes are passed, the poses
+	 * of existing visual objects are updated, but no new ones are created.
+	 */
 	virtual void guiUpdate(
-		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical);
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& viz,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& physical);
 
-	World* getWorldObject() { return m_world; }
-	const World* getWorldObject() const { return m_world; }
+	World* getWorldObject() { return world_; }
+	const World* getWorldObject() const { return world_; }
 
 	void customVisualVisible(const bool visible);
 	bool customVisualVisible() const;
@@ -62,21 +66,21 @@ class VisualObject
    protected:
 	bool parseVisual(const rapidxml::xml_node<char>* visual_node);
 
-	World* m_world;
+	World* world_;
 
 	/** If not empty, will override the derived-class visualization for this
 	 * object. */
-	std::shared_ptr<mrpt::opengl::CSetOfObjects> m_glCustomVisual;
-	std::shared_ptr<mrpt::opengl::CSetOfObjects> m_glBoundingBox;
-	int32_t m_glCustomVisualId = -1;
+	std::shared_ptr<mrpt::opengl::CSetOfObjects> glCustomVisual_;
+	std::shared_ptr<mrpt::opengl::CSetOfObjects> glBoundingBox_;
+	int32_t glCustomVisualId_ = -1;
 
-	const bool m_insertCustomVizIntoViz = true;
-	const bool m_insertCustomVizIntoPhysical = true;
+	const bool insertCustomVizIntoViz_ = true;
+	const bool insertCustomVizIntoPhysical_ = true;
 
 	virtual void internalGuiUpdate(
-		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& viz,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& physical,
 		bool childrenOnly = false) = 0;
-	virtual mrpt::poses::CPose3D internalGuiGetVisualPose() { return {}; }
 
    private:
 	mrpt::math::TPoint3D viz_bbmin_{-1.0, -1.0, .0}, viz_bbmax_{1.0, 1.0, 1.0};

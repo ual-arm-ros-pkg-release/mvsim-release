@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -126,6 +126,12 @@ class Server : public mrpt::system::COutputLogger
 
 	void db_add_topic_subscriber(
 		const std::string& topicName, const std::string& updatesEndPoint);
+
+	/** Send to updatesEndPoint only, if given; otherwise, send to all
+	 * subscribers */
+	void send_topic_publishers_to_subscribed_clients(
+		const std::string& topicName,
+		const std::optional<std::string>& updatesEndPoint = std::nullopt);
 
 	struct InfoPerNode
 	{

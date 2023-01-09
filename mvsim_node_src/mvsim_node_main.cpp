@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -60,6 +60,7 @@ int main(int argc, char** argv)
 		if (!world_file.empty()) node->loadWorldModel(world_file);
 
 		// Attach world as a mvsim communications node:
+		node->mvsim_world_.headless(node->headless_);
 		node->mvsim_world_.connectToServer();
 
 #if PACKAGE_ROS_VERSION == 1
