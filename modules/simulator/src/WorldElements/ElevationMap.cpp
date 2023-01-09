@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -58,13 +58,14 @@ void ElevationMap::loadConfigFrom(const rapidxml::xml_node<char>* root)
 	params["debug_show_contact_points"] =
 		TParamEntry("%bool", &debugShowContactPoints_);
 
-	parse_xmlnode_children_as_param(*root, params);
+	parse_xmlnode_children_as_param(
+		*root, params, world_->user_defined_variables());
 
 	// Load elevation data:
 	mrpt::math::CMatrixFloat elevation_data;
 	if (!sElevationImgFile.empty())
 	{
-		sElevationImgFile = m_world->resolvePath(sElevationImgFile);
+		sElevationImgFile = world_->local_to_abs_path(sElevationImgFile);
 
 		mrpt::img::CImage imgElev;
 		if (!imgElev.loadFromFile(
@@ -99,7 +100,7 @@ void ElevationMap::loadConfigFrom(const rapidxml::xml_node<char>* root)
 	bool has_mesh_image = false;
 	if (!sTextureImgFile.empty())
 	{
-		sTextureImgFile = m_world->resolvePath(sTextureImgFile);
+		sTextureImgFile = world_->local_to_abs_path(sTextureImgFile);
 
 		if (!mesh_image.loadFromFile(sTextureImgFile))
 			throw std::runtime_error(mrpt::format(
@@ -151,7 +152,8 @@ void ElevationMap::loadConfigFrom(const rapidxml::xml_node<char>* root)
 }
 
 void ElevationMap::internalGuiUpdate(
-	mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
+	const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& viz,
+	const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& physical,
 	bool childrenOnly)
 {
 	using namespace mrpt::math;
@@ -162,13 +164,13 @@ void ElevationMap::internalGuiUpdate(
 		"loadConfigFrom() first?");
 
 	// 1st time call?? -> Create objects
-	if (firstSceneRendering_)
+	if (firstSceneRendering_ && viz && physical)
 	{
 		firstSceneRendering_ = false;
-		viz.insert(gl_mesh_);
-		physical.insert(gl_mesh_);
+		viz->get().insert(gl_mesh_);
+		physical->get().insert(gl_mesh_);
 
-		viz.insert(gl_debugWheelsContactPoints_);
+		viz->get().insert(gl_debugWheelsContactPoints_);
 	}
 }
 
@@ -181,11 +183,11 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 
 	ASSERT_(gl_mesh_);
 
-	const World::VehicleList& lstVehs = this->m_world->getListOfVehicles();
+	const World::VehicleList& lstVehs = this->world_->getListOfVehicles();
 	for (World::VehicleList::const_iterator itVeh = lstVehs.begin();
 		 itVeh != lstVehs.end(); ++itVeh)
 	{
-		m_world->getTimeLogger().enter("elevationmap.handle_vehicle");
+		world_->getTimeLogger().enter("elevationmap.handle_vehicle");
 
 		const size_t nWheels = itVeh->second->getNumWheels();
 
@@ -259,8 +261,8 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 
 #if 0
 			std::cout << "iter: " << iter << " poseErr:"
-					  << std::sqrt(corrs.overallSquareError(m_optimal_transf))
-					  << " p:" << m_optimal_transf << "\n";
+					  << std::sqrt(corrs.overallSquareError(optimal_transf_))
+					  << " p:" << optimal_transf_ << "\n";
 #endif
 
 			new_pose.z = optimalTf_.z();
@@ -324,7 +326,7 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 			}
 		}
 
-		m_world->getTimeLogger().leave("elevationmap.handle_vehicle");
+		world_->getTimeLogger().leave("elevationmap.handle_vehicle");
 	}
 }
 

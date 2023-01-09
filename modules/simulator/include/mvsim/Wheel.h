@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -51,7 +51,7 @@ class Wheel : public VisualObject
 	/** Color for OpenGL rendering */
 	mrpt::img::TColor color{0xff323232};
 
-	const TParameterDefinitions m_params = {
+	const TParameterDefinitions params_ = {
 		{"mass", {"%lf", &mass}},
 		{"width", {"%lf", &width}},
 		{"diameter", {"%lf", &diameter}},
@@ -68,8 +68,9 @@ class Wheel : public VisualObject
 	void loadFromXML(const rapidxml::xml_node<char>* xml_node);
 
 	void internalGuiUpdate(
-		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
-		bool childrenOnly = false) override;
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& viz,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& physical,
+		bool childrenOnly) override;
 
 	double getPhi() const
 	{
