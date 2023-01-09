@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -11,11 +11,13 @@
 #include <mvsim/Comms/Client.h>
 #include <mvsim/Simulable.h>
 #include <mvsim/TParameterDefinitions.h>
+#include <mvsim/VisualObject.h>
 #include <mvsim/World.h>
 
 #include <cmath>  // fmod()
 
 #include "JointXMLnode.h"
+#include "parse_utils.h"
 #include "xml_utils.h"
 
 #if defined(MVSIM_HAS_ZMQ) && defined(MVSIM_HAS_PROTOBUF)
@@ -28,12 +30,10 @@ using namespace mvsim;
 void Simulable::simul_pre_timestep(	 //
 	[[maybe_unused]] const TSimulContext& context)
 {
-	if (!m_b2d_body) return;
-
 	// Follow animation, if enabled:
-	if (m_anim_keyframes_path && !m_anim_keyframes_path->empty())
+	if (anim_keyframes_path_ && !anim_keyframes_path_->empty())
 	{
-		auto& poseSeq = m_anim_keyframes_path.value();
+		auto& poseSeq = anim_keyframes_path_.value();
 
 		mrpt::math::TPose3D q;
 		bool interOk = false;
@@ -43,53 +43,59 @@ void Simulable::simul_pre_timestep(	 //
 			mrpt::Clock::fromDouble(std::fmod(context.simul_time, tMax)), q,
 			interOk);
 
-		if (interOk) this->setPose(m_initial_q + q);
+		if (interOk) this->setPose(initial_q_ + q);
 	}
 
+	if (!b2dBody_) return;
+
 	// Pos:
-	m_b2d_body->SetTransform(b2Vec2(m_q.x, m_q.y), m_q.yaw);
+	b2dBody_->SetTransform(b2Vec2(q_.x, q_.y), q_.yaw);
 
 	// Vel:
-	m_b2d_body->SetLinearVelocity(b2Vec2(m_dq.vx, m_dq.vy));
-	m_b2d_body->SetAngularVelocity(m_dq.omega);
+	b2dBody_->SetLinearVelocity(b2Vec2(dq_.vx, dq_.vy));
+	b2dBody_->SetAngularVelocity(dq_.omega);
 }
 
 void Simulable::simul_post_timestep(const TSimulContext& context)
 {
-	if (m_b2d_body)
+	if (b2dBody_)
 	{
-		poses_mutex_lock();
-		// m_simulable_parent->physical_objects_mtx(): already locked by caller
+		q_mtx_.lock();
+		// simulable_parent_->physical_objects_mtx(): already locked by caller
 
 		// Pos:
-		const b2Vec2& pos = m_b2d_body->GetPosition();
-		const float angle = m_b2d_body->GetAngle();
-		m_q.x = pos(0);
-		m_q.y = pos(1);
-		m_q.yaw = angle;
+		const b2Vec2& pos = b2dBody_->GetPosition();
+		const float angle = b2dBody_->GetAngle();
+		q_.x = pos(0);
+		q_.y = pos(1);
+		q_.yaw = angle;
 		// The rest (z,pitch,roll) will be always 0, unless other
 		// world-element modifies them! (e.g. elevation map)
 
+		// Update the GUI element **poses** only:
+		if (auto* vo = meAsVisualObject(); vo)
+			vo->guiUpdate(std::nullopt, std::nullopt);
+
 		// Vel:
-		const b2Vec2& vel = m_b2d_body->GetLinearVelocity();
-		const float w = m_b2d_body->GetAngularVelocity();
-		m_dq.vx = vel(0);
-		m_dq.vy = vel(1);
-		m_dq.omega = w;
+		const b2Vec2& vel = b2dBody_->GetLinearVelocity();
+		const float w = b2dBody_->GetAngularVelocity();
+		dq_.vx = vel(0);
+		dq_.vy = vel(1);
+		dq_.omega = w;
 
 		// Instantaneous collision flag:
-		m_isInCollision = false;
-		if (b2ContactEdge* cl = m_b2d_body->GetContactList();
+		isInCollision_ = false;
+		if (b2ContactEdge* cl = b2dBody_->GetContactList();
 			cl != nullptr && cl->contact != nullptr &&
 			cl->contact->IsTouching())
 		{
 			// We may store with which other bodies it's in collision...
-			m_isInCollision = true;
+			isInCollision_ = true;
 		}
 		// Reseteable collision flag:
-		m_hadCollisionFlag = m_hadCollisionFlag || m_isInCollision;
+		hadCollisionFlag_ = hadCollisionFlag_ || isInCollision_;
 
-		poses_mutex_unlock();
+		q_mtx_.unlock();
 	}
 
 	// Optional publish to topics:
@@ -104,21 +110,28 @@ void Simulable::apply_force(
 
 mrpt::math::TTwist2D Simulable::getVelocityLocal() const
 {
-	std::shared_lock lck(m_q_mtx);
+	std::shared_lock lck(q_mtx_);
 
-	mrpt::math::TTwist2D local_vel = m_dq;
-	local_vel.rotate(-m_q.yaw);	 // "-" means inverse pose
+	mrpt::math::TTwist2D local_vel = dq_;
+	local_vel.rotate(-q_.yaw);	// "-" means inverse pose
 	return local_vel;
 }
 
 mrpt::poses::CPose2D Simulable::getCPose2D() const
 {
-	std::shared_lock lck(m_q_mtx);
+	std::shared_lock lck(q_mtx_);
 
-	return {m_q.x, m_q.y, m_q.yaw};
+	return {q_.x, q_.y, q_.yaw};
 }
 
-bool Simulable::parseSimulable(const JointXMLnode<>& rootNode)
+mrpt::poses::CPose3D Simulable::getCPose3D() const
+{
+	std::shared_lock lck(q_mtx_);
+	return mrpt::poses::CPose3D(q_);
+}
+
+bool Simulable::parseSimulable(
+	const JointXMLnode<>& rootNode, const ParseSimulableParams& psp)
 {
 	MRPT_START
 
@@ -131,15 +144,40 @@ bool Simulable::parseSimulable(const JointXMLnode<>& rootNode)
 	if (const xml_node<>* nPose = rootNode.first_node("init_pose"); nPose)
 	{
 		mrpt::math::TPose3D p;
-		if (3 != ::sscanf(nPose->value(), "%lf %lf %lf", &p.x, &p.y, &p.yaw))
+		if (3 != ::sscanf(
+					 mvsim::parse(
+						 nPose->value(),
+						 getSimulableWorldObject()->user_defined_variables())
+						 .c_str(),
+					 "%lf %lf %lf", &p.x, &p.y, &p.yaw))
 			THROW_EXCEPTION_FMT(
 				"Error parsing <init_pose>%s</init_pose>", nPose->value());
 		p.yaw *= M_PI / 180.0;	// deg->rad
 
 		this->setPose(p);
-		m_initial_q = p;  // save it for later usage in some animations, etc.
+		initial_q_ = p;	 // save it for later usage in some animations, etc.
 	}
-	else
+	else if (const xml_node<>* nPose3 = rootNode.first_node("init_pose3d");
+			 nPose3)
+	{
+		mrpt::math::TPose3D p;
+		if (6 != ::sscanf(
+					 mvsim::parse(
+						 nPose3->value(),
+						 getSimulableWorldObject()->user_defined_variables())
+						 .c_str(),
+					 "%lf %lf %lf %lf %lf %lf ", &p.x, &p.y, &p.z, &p.yaw,
+					 &p.pitch, &p.roll))
+			THROW_EXCEPTION_FMT(
+				"Error parsing <init_pose3d>%s</init_pose3d>", nPose->value());
+		p.yaw *= M_PI / 180.0;	// deg->rad
+		p.pitch *= M_PI / 180.0;  // deg->rad
+		p.roll *= M_PI / 180.0;	 // deg->rad
+
+		this->setPose(p);
+		initial_q_ = p;	 // save it for later usage in some animations, etc.
+	}
+	else if (psp.init_pose_mandatory)
 	{
 		THROW_EXCEPTION(
 			"Missing required XML node <init_pose>x y phi</init_pose>");
@@ -151,9 +189,12 @@ bool Simulable::parseSimulable(const JointXMLnode<>& rootNode)
 	if (const xml_node<>* nInitVel = rootNode.first_node("init_vel"); nInitVel)
 	{
 		mrpt::math::TTwist2D dq;
-		if (3 !=
-			::sscanf(
-				nInitVel->value(), "%lf %lf %lf", &dq.vx, &dq.vy, &dq.omega))
+		if (3 != ::sscanf(
+					 mvsim::parse(
+						 nInitVel->value(),
+						 getSimulableWorldObject()->user_defined_variables())
+						 .c_str(),
+					 "%lf %lf %lf", &dq.vx, &dq.vy, &dq.omega))
 			THROW_EXCEPTION_FMT(
 				"Error parsing <init_vel>%s</init_vel>", nInitVel->value());
 		dq.omega *= M_PI / 180.0;  // deg->rad
@@ -178,7 +219,8 @@ bool Simulable::parseSimulable(const JointXMLnode<>& rootNode)
 		params["publish_relative_pose_objects"] =
 			TParamEntry("%s", &listObjects);
 
-		const std::map<std::string, std::string> varValues = {{"NAME", m_name}};
+		auto varValues = simulable_parent_->user_defined_variables();
+		varValues["NAME"] = name_;
 
 		parse_xmlnode_children_as_param(*node, params, varValues);
 
@@ -225,27 +267,49 @@ bool Simulable::parseSimulable(const JointXMLnode<>& rootNode)
 
 		if (sType == "keyframes")
 		{
-			auto& poseSeq = m_anim_keyframes_path.emplace();
+			auto& poseSeq = anim_keyframes_path_.emplace();
 			poseSeq.setInterpolationMethod(mrpt::poses::imLinearSlerp);
 
 			for (auto n = nAnim->first_node(); n; n = n->next_sibling())
 			{
-				if (strcmp(n->name(), "time_pose") != 0)
-					continue;  // ignore unknowns
+				if (strcmp(n->name(), "time_pose") == 0)
+				{
+					mrpt::math::TPose3D p;
+					double t = 0;
+					if (4 != ::sscanf(
+								 mvsim::parse(
+									 n->value(), getSimulableWorldObject()
+													 ->user_defined_variables())
+									 .c_str(),
+								 "%lf %lf %lf %lf", &t, &p.x, &p.y, &p.yaw))
+						THROW_EXCEPTION_FMT(
+							"Error parsing <time_pose>:\n%s", n->value());
+					p.yaw *= M_PI / 180.0;	// deg->rad
 
-				mrpt::math::TPose3D p;
-				double t = 0;
-				if (4 !=
-					::sscanf(
-						n->value(), "%lf %lf %lf %lf", &t, &p.x, &p.y, &p.yaw))
-					THROW_EXCEPTION_FMT(
-						"Error parsing <time_pose>:\n%s", n->value());
-				p.yaw *= M_PI / 180.0;	// deg->rad
+					poseSeq.insert(mrpt::Clock::fromDouble(t), p);
+				}
+				else if (strcmp(n->name(), "time_pose3d") == 0)
+				{
+					mrpt::math::TPose3D p;
+					double t = 0;
+					if (7 != ::sscanf(
+								 mvsim::parse(
+									 n->value(), getSimulableWorldObject()
+													 ->user_defined_variables())
+									 .c_str(),
+								 "%lf %lf %lf %lf %lf %lf %lf", &t, &p.x, &p.y,
+								 &p.z, &p.yaw, &p.pitch, &p.roll))
+						THROW_EXCEPTION_FMT(
+							"Error parsing <time_pose3d>:\n%s", n->value());
+					p.yaw *= M_PI / 180.0;	// deg->rad
+					p.pitch *= M_PI / 180.0;  // deg->rad
+					p.roll *= M_PI / 180.0;	 // deg->rad
 
-				poseSeq.insert(mrpt::Clock::fromDouble(t), p);
+					poseSeq.insert(mrpt::Clock::fromDouble(t), p);
+				}
 			}
 
-			// m_anim_keyframes_path->saveToTextFile(m_name + "_path.txt"s);
+			// anim_keyframes_path_->saveToTextFile(name_ + "_path.txt"s);
 		}
 		else
 		{
@@ -259,7 +323,7 @@ bool Simulable::parseSimulable(const JointXMLnode<>& rootNode)
 
 void Simulable::internalHandlePublish(const TSimulContext& context)
 {
-	std::shared_lock lck(m_q_mtx);
+	std::shared_lock lck(q_mtx_);
 
 	MRPT_START
 
@@ -276,15 +340,15 @@ void Simulable::internalHandlePublish(const TSimulContext& context)
 	{
 		mvsim_msgs::TimeStampedPose msg;
 		msg.set_unixtimestamp(tNow);
-		msg.set_objectid(m_name);
+		msg.set_objectid(name_);
 
 		auto pose = msg.mutable_pose();
-		pose->set_x(m_q.x);
-		pose->set_y(m_q.y);
+		pose->set_x(q_.x);
+		pose->set_y(q_.y);
 		pose->set_z(.0);
-		pose->set_yaw(m_q.yaw);
-		pose->set_pitch(m_q.pitch);
-		pose->set_roll(m_q.roll);
+		pose->set_yaw(q_.yaw);
+		pose->set_pitch(q_.pitch);
+		pose->set_roll(q_.roll);
 
 		client.publishTopic(publishPoseTopic_, msg);
 	}
@@ -293,20 +357,21 @@ void Simulable::internalHandlePublish(const TSimulContext& context)
 	{
 		mvsim_msgs::TimeStampedPose msg;
 		msg.set_unixtimestamp(tNow);
-		msg.set_relativetoobjectid(m_name);
+		msg.set_relativetoobjectid(name_);
 
+		// Note: getSimulableWorldObjectMtx() is already hold by my caller.
 		const auto& allObjects =
 			getSimulableWorldObject()->getListOfSimulableObjects();
 
 		// detect other objects and publish their relative poses wrt me:
 		for (const auto& otherId : publishRelativePoseOfOtherObjects_)
 		{
-			msg.set_objectid(otherId);
-
 			if (auto itObj = allObjects.find(otherId);
 				itObj != allObjects.end())
 			{
-				const auto relPose = itObj->second->m_q - m_q;
+				msg.set_objectid(otherId);
+
+				const auto relPose = itObj->second->q_ - q_;
 
 				auto pose = msg.mutable_pose();
 				pose->set_x(relPose.x);
@@ -322,7 +387,7 @@ void Simulable::internalHandlePublish(const TSimulContext& context)
 			{
 				std::cerr
 					<< "[WARNING] Trying to publish relative pose of '"
-					<< otherId << "' wrt '" << m_name
+					<< otherId << "' wrt '" << name_
 					<< "' but could not find any object in the world with "
 					   "the former name."
 					<< std::endl;
@@ -352,7 +417,40 @@ void Simulable::registerOnServer(mvsim::Client& c)
 
 void Simulable::setPose(const mrpt::math::TPose3D& p) const
 {
-	m_q_mtx.lock();
-	const_cast<mrpt::math::TPose3D&>(m_q) = p;
-	m_q_mtx.unlock();
+	q_mtx_.lock();
+
+	Simulable& me = const_cast<Simulable&>(*this);
+
+	me.q_ = p;
+
+	// Update the GUI element poses only:
+	if (auto* vo = me.meAsVisualObject(); vo)
+		vo->guiUpdate(std::nullopt, std::nullopt);
+
+	q_mtx_.unlock();
+}
+
+mrpt::math::TPose3D Simulable::getPose() const
+{
+	q_mtx_.lock_shared();
+	mrpt::math::TPose3D ret = q_;
+	q_mtx_.unlock_shared();
+	return ret;
+}
+
+mrpt::math::TPose3D Simulable::getPoseNoLock() const { return q_; }
+
+mrpt::math::TTwist2D Simulable::getTwist() const
+{
+	q_mtx_.lock_shared();
+	mrpt::math::TTwist2D ret = dq_;
+	q_mtx_.unlock_shared();
+	return ret;
+}
+
+void Simulable::setTwist(const mrpt::math::TTwist2D& dq) const
+{
+	q_mtx_.lock();
+	const_cast<mrpt::math::TTwist2D&>(dq_) = dq;
+	q_mtx_.unlock();
 }

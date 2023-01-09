@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -141,7 +141,7 @@ void World::process_load_walls(const rapidxml::xml_node<char>& node)
 	params["color"] = TParamEntry("%color", &wallColor);
 
 	// Parse XML params:
-	parse_xmlnode_children_as_param(node, params);
+	parse_xmlnode_children_as_param(node, params, user_defined_variables());
 
 	ASSERT_(!wallModelFileName.empty());
 	const std::string localFileName = xmlPathToActualPath(wallModelFileName);

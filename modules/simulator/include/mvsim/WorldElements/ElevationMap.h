@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -31,12 +31,11 @@ class ElevationMap : public WorldElementBase
 
 	bool getElevationAt(
 		double x, double y, float& z) const;  //!< return false if out of bounds
-	void poses_mutex_lock() override {}
-	void poses_mutex_unlock() override {}
 
    protected:
 	virtual void internalGuiUpdate(
-		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& viz,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& physical,
 		bool childrenOnly) override;
 
 	/** This object holds both, the mesh data, and is in charge of 3D rendering.
@@ -46,7 +45,7 @@ class ElevationMap : public WorldElementBase
 	bool firstSceneRendering_ = true;
 	float resolution_ = 1.0f;
 
-	/** A copy of elevation data in m_gl_mesh. Coordinate order is (x,y) */
+	/** A copy of elevation data in gl_mesh_. Coordinate order is (x,y) */
 	mrpt::math::CMatrixFloat meshCacheZ_;
 
 	bool debugShowContactPoints_ = false;
