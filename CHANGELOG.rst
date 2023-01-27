@@ -2,6 +2,11 @@
 Changelog for package mvsim
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.5.2 (2023-01-27)
+------------------
+* FIX build farm errors in armhf builds
+* Contributors: Jose Luis Blanco-Claraco
+
 0.5.1 (2023-01-26)
 ------------------
 * FIX: Stuck unit test runs in armhf build farms
