@@ -175,10 +175,11 @@ void DynamicsAckermann::dynamics_load_params_from_xml(
 }
 
 // See docs in base class:
-void DynamicsAckermann::invoke_motor_controllers(
-	const TSimulContext& context, std::vector<double>& out_torque_per_wheel)
+std::vector<double> DynamicsAckermann::invoke_motor_controllers(
+	const TSimulContext& context)
 {
 	// Longitudinal forces at each wheel:
+	std::vector<double> out_torque_per_wheel;
 	out_torque_per_wheel.assign(4, 0.0);
 
 	if (controller_)
@@ -201,6 +202,7 @@ void DynamicsAckermann::invoke_motor_controllers(
 			co.steer_ang, wheels_info_[WHEEL_FL].yaw,
 			wheels_info_[WHEEL_FR].yaw);
 	}
+	return out_torque_per_wheel;
 }
 
 void DynamicsAckermann::computeFrontWheelAngles(
@@ -245,7 +247,7 @@ mrpt::math::TTwist2D DynamicsAckermann::getVelocityLocalOdoEstimate() const
 	const double Ay = wheels_info_[WHEEL_RL].y - wheels_info_[WHEEL_RR].y;
 	ASSERTMSG_(
 		Ay != 0.0,
-		"The two wheels of a differential vehicle CAN'T by at the same Y "
+		"The two wheels of a differential vehicle cannot be at the same Y "
 		"coordinate!");
 
 	const double w_veh = (w1 * R1 - w0 * R0) / Ay;

@@ -86,8 +86,7 @@ class VehicleBase : public VisualObject, public Simulable
 
 	/** Current velocity of each wheel's center point (in local coords). Call
 	 * with veh_vel_local=getVelocityLocal() for ground-truth.  */
-	void getWheelsVelocityLocal(
-		std::vector<mrpt::math::TPoint2D>& vels,
+	std::vector<mrpt::math::TVector2D> getWheelsVelocityLocal(
 		const mrpt::math::TTwist2D& veh_vel_local) const;
 
 	/** Gets the current estimation of odometry-based velocity as reconstructed
@@ -166,9 +165,8 @@ class VehicleBase : public VisualObject, public Simulable
 	virtual void dynamics_load_params_from_xml(
 		const rapidxml::xml_node<char>* xml_node) = 0;
 
-	virtual void invoke_motor_controllers(
-		const TSimulContext& context,
-		std::vector<double>& out_force_per_wheel) = 0;
+	virtual std::vector<double> invoke_motor_controllers(
+		const TSimulContext& context) = 0;
 
 	VisualObject* meAsVisualObject() override { return this; }
 
@@ -180,9 +178,6 @@ class VehicleBase : public VisualObject, public Simulable
 	FrictionBasePtr friction_;
 
 	TListSensors sensors_;	//!< Sensors aboard
-
-	/** Updated in simul_pre_timestep() */
-	std::vector<double> torque_per_wheel_;
 
 	// Chassis info:
 	double chassis_mass_ = 15.0;
@@ -223,11 +218,14 @@ class VehicleBase : public VisualObject, public Simulable
 	// Called from internalGuiUpdate()
 	void internal_internalGuiUpdate_forces(mrpt::opengl::COpenGLScene& scene);
 
-	mrpt::opengl::CSetOfObjects::Ptr gl_chassis_;
-	std::vector<mrpt::opengl::CSetOfObjects::Ptr> gl_wheels_;
-	mrpt::opengl::CSetOfLines::Ptr gl_forces_;
-	std::mutex force_segments_for_rendering_cs_;
-	std::vector<mrpt::math::TSegment3D> force_segments_for_rendering_;
+	mrpt::opengl::CSetOfObjects::Ptr glChassis_;
+	std::vector<mrpt::opengl::CSetOfObjects::Ptr> glWheels_;
+	mrpt::opengl::CSetOfLines::Ptr glForces_;
+	mrpt::opengl::CSetOfLines::Ptr glMotorTorques_;
+
+	std::vector<mrpt::math::TSegment3D> forceSegmentsForRendering_;
+	std::vector<mrpt::math::TSegment3D> torqueSegmentsForRendering_;
+	std::mutex forceSegmentsForRenderingMtx_;
 
    public:	// data logger header entries
 	static constexpr char DL_TIMESTAMP[] = "timestamp";

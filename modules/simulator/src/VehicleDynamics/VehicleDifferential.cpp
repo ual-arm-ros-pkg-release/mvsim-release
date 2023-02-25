@@ -132,12 +132,11 @@ void DynamicsDifferential::dynamics_load_params_from_xml(
 }
 
 // See docs in base class:
-void DynamicsDifferential::invoke_motor_controllers(
-	const TSimulContext& context, std::vector<double>& out_torque_per_wheel)
+std::vector<double> DynamicsDifferential::invoke_motor_controllers(
+	const TSimulContext& context)
 {
 	// Longitudinal forces at each wheel:
-	auto& otpw = out_torque_per_wheel;
-
+	std::vector<double> otpw;
 	otpw.assign(getNumWheels(), 0.0);
 
 	if (controller_)
@@ -170,6 +169,7 @@ void DynamicsDifferential::invoke_motor_controllers(
 				THROW_EXCEPTION("Unexpected number of wheels!");
 		};
 	}
+	return otpw;
 }
 
 // See docs in base class:
@@ -189,7 +189,7 @@ mrpt::math::TTwist2D DynamicsDifferential::getVelocityLocalOdoEstimate() const
 	const double Ay = wheels_info_[WHEEL_L].y - wheels_info_[WHEEL_R].y;
 	ASSERTMSG_(
 		Ay != 0.0,
-		"The two wheels of a differential vehicle CAN'T by at the same Y "
+		"The two wheels of a differential vehicle cannot be at the same Y "
 		"coordinate!");
 
 	const double w_veh = (w1 * R1 - w0 * R0) / Ay;

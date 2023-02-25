@@ -46,7 +46,7 @@ class DynamicsAckermann : public VehicleBase
 	struct TControllerOutput
 	{
 		double fl_torque, fr_torque, rl_torque, rr_torque;
-		double steer_ang;  //!< Equivalent ackerman steering angle
+		double steer_ang;  //!< Equivalent Ackermann steering angle
 		TControllerOutput()
 			: fl_torque(0),
 			  fr_torque(0),
@@ -162,9 +162,8 @@ class DynamicsAckermann : public VehicleBase
 	virtual void dynamics_load_params_from_xml(
 		const rapidxml::xml_node<char>* xml_node) override;
 	// See base class doc
-	virtual void invoke_motor_controllers(
-		const TSimulContext& context,
-		std::vector<double>& out_force_per_wheel) override;
+	virtual std::vector<double> invoke_motor_controllers(
+		const TSimulContext& context) override;
 
    private:
 	ControllerBase::Ptr controller_;  //!< The installed controller
