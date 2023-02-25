@@ -16,6 +16,7 @@
 #include <mrpt/math/TPolygon2D.h>
 #include <mrpt/poses/CPose2D.h>
 #include <mrpt/poses/CPose3D.h>
+#include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/string_utils.h>
 #include <mvsim/basic_types.h>
@@ -128,6 +129,23 @@ void TParamEntry::parse(
 				"%s Error: Unknown format specifier '%s'", functionNameContext,
 				frmt));
 	}
+	// %point3d
+	else if (!strncmp(frmt, "%point3d", strlen("%point3d")))
+	{
+		double x = 0, y = 0, z = 0;
+		int ret = ::sscanf(str.c_str(), "%lf %lf %lf", &x, &y, &z);
+		if (ret != 2 && ret != 3)
+			throw std::runtime_error(mrpt::format(
+				"%s Error parsing '%s'='%s' (Expected format:'X Y [Z]')",
+				functionNameContext, varName.c_str(), str.c_str()));
+
+		mrpt::math::TPoint3D& pp =
+			*reinterpret_cast<mrpt::math::TPoint3D*>(val);
+
+		pp.x = x;
+		pp.y = y;
+		pp.z = z;
+	}
 	// "%pose3d"
 	else if (!strncmp(frmt, "%pose3d", strlen("%pose3d")))
 	{
@@ -187,10 +205,7 @@ bool mvsim::parse_xmlnode_as_param(
 	const std::map<std::string, std::string>& variableNamesValues,
 	const char* functionNameContext)
 {
-	TParameterDefinitions::const_iterator it_param =
-		params.find(xml_node.name());
-
-	if (it_param != params.end())
+	if (auto it_param = params.find(xml_node.name()); it_param != params.end())
 	{
 		// parse parameter:
 		it_param->second.parse(
@@ -198,7 +213,10 @@ bool mvsim::parse_xmlnode_as_param(
 			functionNameContext);
 		return true;
 	}
-	return false;
+	else
+	{
+		return false;
+	}
 }
 
 /** Call \a parse_xmlnode_as_param() for all children nodes of the given node.
@@ -206,24 +224,33 @@ bool mvsim::parse_xmlnode_as_param(
 void mvsim::parse_xmlnode_children_as_param(
 	const rapidxml::xml_node<char>& root, const TParameterDefinitions& params,
 	const std::map<std::string, std::string>& variableNamesValues,
-	const char* functionNameContext)
+	const char* functionNameContext, mrpt::system::COutputLogger* logger)
 {
 	rapidxml::xml_node<>* node = root.first_node();
 	while (node)
 	{
-		parse_xmlnode_as_param(
+		bool recognized = parse_xmlnode_as_param(
 			*node, params, variableNamesValues, functionNameContext);
+		if (!recognized && logger)
+		{
+			logger->logFmt(
+				mrpt::system::LVL_WARN, "Unrecognized tag '<%s>' in %s",
+				node->name(),
+				functionNameContext ? functionNameContext : "(none)");
+		}
 		node = node->next_sibling(nullptr);	 // Move on to next node
 	}
 }
 
 mrpt::math::TPose2D mvsim::parseXYPHI(
-	const std::string& s, bool allow_missing_angle,
-	double default_angle_radians)
+	const std::string& sOrg, bool allow_missing_angle,
+	double default_angle_radians,
+	const std::map<std::string, std::string>& variableNamesValues)
 {
 	mrpt::math::TPose2D v;
 	v.phi = mrpt::RAD2DEG(default_angle_radians);  // Default ang.
 
+	const auto s = parse(sOrg, variableNamesValues);
 	int na = ::sscanf(s.c_str(), "%lf %lf %lf", &v.x, &v.y, &v.phi);
 
 	// User provides numbers as degrees:
