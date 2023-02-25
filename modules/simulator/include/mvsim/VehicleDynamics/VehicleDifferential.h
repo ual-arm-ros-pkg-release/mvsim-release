@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -111,11 +111,6 @@ class DynamicsDifferential : public VehicleBase
 		ControllerTwistPID(DynamicsDifferential& veh);
 		static const char* class_name() { return "twist_pid"; }
 
-		/** Directly set these values to tell the controller the desired
-		 * setpoints.
-		 * desired velocities (m/s) and (rad/s) */
-		double setpoint_lin_speed = 0, setpoint_ang_speed = 0;
-
 		virtual void control_step(
 			const DynamicsDifferential::TControllerInput& ci,
 			DynamicsDifferential::TControllerOutput& co) override;
@@ -131,23 +126,35 @@ class DynamicsDifferential : public VehicleBase
 		double max_torque = 100;
 
 		// See base docs.
-		virtual bool setTwistCommand(const mrpt::math::TTwist2D& t) override
+		bool setTwistCommand(const mrpt::math::TTwist2D& t) override
 		{
-			setpoint_lin_speed = t.vx;
-			setpoint_ang_speed = t.omega;
+			setpointMtx_.lock();
+			setpoint_ = t;
+			setpointMtx_.unlock();
 			return true;
 		}
 
+		/** Returns the current setpoint of the controller */
+		mrpt::math::TTwist2D setpoint() const
+		{
+			setpointMtx_.lock();
+			auto t = setpoint_;
+			setpointMtx_.unlock();
+			return t;
+		}
+
 	   private:
-		double m_distWheels = 0;
-		std::array<PID_Controller, 2> m_PIDs;
+		double distWheels_ = 0;
+		std::array<PID_Controller, 2> PIDs_;
+		mrpt::math::TTwist2D setpoint_{0, 0, 0};  //!< "vx" and "omega" only
+		mutable std::mutex setpointMtx_;
 	};
 
-	const ControllerBase::Ptr& getController() const { return m_controller; }
-	ControllerBase::Ptr& getController() { return m_controller; }
+	const ControllerBase::Ptr& getController() const { return controller_; }
+	ControllerBase::Ptr& getController() { return controller_; }
 	virtual ControllerBaseInterface* getControllerInterface() override
 	{
-		return m_controller.get();
+		return controller_.get();
 	}
 
 	/** @} */  // end controllers
@@ -159,15 +166,14 @@ class DynamicsDifferential : public VehicleBase
 	virtual void dynamics_load_params_from_xml(
 		const rapidxml::xml_node<char>* xml_node) override;
 	// See base class docs
-	virtual void invoke_motor_controllers(
-		const TSimulContext& context,
-		std::vector<double>& out_force_per_wheel) override;
+	virtual std::vector<double> invoke_motor_controllers(
+		const TSimulContext& context) override;
 
 	/// Defined at ctor time:
-	const std::vector<ConfigPerWheel> m_configPerWheel;
+	const std::vector<ConfigPerWheel> configPerWheel_;
 
    private:
-	ControllerBase::Ptr m_controller;  //!< The installed controller
+	ControllerBase::Ptr controller_;  //!< The installed controller
 };
 
 class DynamicsDifferential_3_wheels : public DynamicsDifferential

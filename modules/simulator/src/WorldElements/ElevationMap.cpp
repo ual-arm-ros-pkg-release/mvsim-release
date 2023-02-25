@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -55,16 +55,20 @@ void ElevationMap::loadConfigFrom(const rapidxml::xml_node<char>* root)
 	params["mesh_color"] = TParamEntry("%color", &mesh_color);
 
 	params["resolution"] = TParamEntry("%f", &resolution_);
+	params["texture_extension_x"] = TParamEntry("%f", &textureExtensionX_);
+	params["texture_extension_y"] = TParamEntry("%f", &textureExtensionY_);
+
 	params["debug_show_contact_points"] =
 		TParamEntry("%bool", &debugShowContactPoints_);
 
-	parse_xmlnode_children_as_param(*root, params);
+	parse_xmlnode_children_as_param(
+		*root, params, world_->user_defined_variables());
 
 	// Load elevation data:
 	mrpt::math::CMatrixFloat elevation_data;
 	if (!sElevationImgFile.empty())
 	{
-		sElevationImgFile = m_world->resolvePath(sElevationImgFile);
+		sElevationImgFile = world_->local_to_abs_path(sElevationImgFile);
 
 		mrpt::img::CImage imgElev;
 		if (!imgElev.loadFromFile(
@@ -99,7 +103,7 @@ void ElevationMap::loadConfigFrom(const rapidxml::xml_node<char>* root)
 	bool has_mesh_image = false;
 	if (!sTextureImgFile.empty())
 	{
-		sTextureImgFile = m_world->resolvePath(sTextureImgFile);
+		sTextureImgFile = world_->xmlPathToActualPath(sTextureImgFile);
 
 		if (!mesh_image.loadFromFile(sTextureImgFile))
 			throw std::runtime_error(mrpt::format(
@@ -115,10 +119,12 @@ void ElevationMap::loadConfigFrom(const rapidxml::xml_node<char>* root)
 
 	if (has_mesh_image)
 	{
-		ASSERT_EQUAL_(mesh_image.getWidth(), (size_t)elevation_data.cols());
-		ASSERT_EQUAL_(mesh_image.getHeight(), (size_t)elevation_data.rows());
-
 		gl_mesh_->assignImageAndZ(mesh_image, elevation_data);
+
+#if MRPT_VERSION >= 0x270
+		gl_mesh_->setMeshTextureExtension(
+			textureExtensionX_, textureExtensionY_);
+#endif
 	}
 	else
 	{
@@ -151,7 +157,8 @@ void ElevationMap::loadConfigFrom(const rapidxml::xml_node<char>* root)
 }
 
 void ElevationMap::internalGuiUpdate(
-	mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
+	const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& viz,
+	const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& physical,
 	bool childrenOnly)
 {
 	using namespace mrpt::math;
@@ -162,13 +169,13 @@ void ElevationMap::internalGuiUpdate(
 		"loadConfigFrom() first?");
 
 	// 1st time call?? -> Create objects
-	if (firstSceneRendering_)
+	if (firstSceneRendering_ && viz && physical)
 	{
 		firstSceneRendering_ = false;
-		viz.insert(gl_mesh_);
-		physical.insert(gl_mesh_);
+		viz->get().insert(gl_mesh_);
+		physical->get().insert(gl_mesh_);
 
-		viz.insert(gl_debugWheelsContactPoints_);
+		viz->get().insert(gl_debugWheelsContactPoints_);
 	}
 }
 
@@ -177,17 +184,18 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 	// For each vehicle:
 	// 1) Compute its 3D pose according to the mesh tilt angle.
 	// 2) Apply gravity force
-	const double gravity = getWorldObject()->get_gravity();
+	const double gravity = parent()->get_gravity();
 
 	ASSERT_(gl_mesh_);
 
-	const World::VehicleList& lstVehs = this->m_world->getListOfVehicles();
-	for (World::VehicleList::const_iterator itVeh = lstVehs.begin();
-		 itVeh != lstVehs.end(); ++itVeh)
+	const World::VehicleList& lstVehs = this->world_->getListOfVehicles();
+	for (auto& nameVeh : lstVehs)
 	{
-		m_world->getTimeLogger().enter("elevationmap.handle_vehicle");
+		world_->getTimeLogger().enter("elevationmap.handle_vehicle");
 
-		const size_t nWheels = itVeh->second->getNumWheels();
+		auto& veh = nameVeh.second;
+
+		const size_t nWheels = veh->getNumWheels();
 
 		// 1) Compute its 3D pose according to the mesh tilt angle.
 		// Idea: run a least-squares method to find the best
@@ -200,7 +208,7 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 		mrpt::math::TPoint3D dir_down;
 		for (int iter = 0; iter < 2; iter++)
 		{
-			const mrpt::math::TPose3D& cur_pose = itVeh->second->getPose();
+			const mrpt::math::TPose3D& cur_pose = veh->getPose();
 			// This object is faster for repeated point projections
 			const mrpt::poses::CPose3D cur_cpose(cur_pose);
 
@@ -210,7 +218,7 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 			bool out_of_area = false;
 			for (size_t iW = 0; !out_of_area && iW < nWheels; iW++)
 			{
-				const Wheel& wheel = itVeh->second->getWheelInfo(iW);
+				const Wheel& wheel = veh->getWheelInfo(iW);
 
 				// Local frame
 				mrpt::tfest::TMatchingPair corr;
@@ -259,8 +267,8 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 
 #if 0
 			std::cout << "iter: " << iter << " poseErr:"
-					  << std::sqrt(corrs.overallSquareError(m_optimal_transf))
-					  << " p:" << m_optimal_transf << "\n";
+					  << std::sqrt(corrs.overallSquareError(optimal_transf_))
+					  << " p:" << optimal_transf_ << "\n";
 #endif
 
 			new_pose.z = optimalTf_.z();
@@ -268,7 +276,7 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 			new_pose.pitch = optimalTf_.pitch();
 			new_pose.roll = optimalTf_.roll();
 
-			itVeh->second->setPose(new_pose);
+			veh->setPose(new_pose);
 
 		}  // end iters
 
@@ -305,26 +313,25 @@ void ElevationMap::simul_pre_timestep(const TSimulContext& context)
 		// -------------------------------------------------------------
 		{
 			// To chassis:
-			const double chassis_weight =
-				itVeh->second->getChassisMass() * gravity;
+			const double chassis_weight = veh->getChassisMass() * gravity;
 			const mrpt::math::TPoint2D chassis_com =
-				itVeh->second->getChassisCenterOfMass();
-			itVeh->second->apply_force(
+				veh->getChassisCenterOfMass();
+			veh->apply_force(
 				{dir_down.x * chassis_weight, dir_down.y * chassis_weight},
 				chassis_com);
 
 			// To wheels:
 			for (size_t iW = 0; iW < nWheels; iW++)
 			{
-				const Wheel& wheel = itVeh->second->getWheelInfo(iW);
+				const Wheel& wheel = veh->getWheelInfo(iW);
 				const double wheel_weight = wheel.mass * gravity;
-				itVeh->second->apply_force(
+				veh->apply_force(
 					{dir_down.x * wheel_weight, dir_down.y * wheel_weight},
 					{wheel.x, wheel.y});
 			}
 		}
 
-		m_world->getTimeLogger().leave("elevationmap.handle_vehicle");
+		world_->getTimeLogger().leave("elevationmap.handle_vehicle");
 	}
 }
 

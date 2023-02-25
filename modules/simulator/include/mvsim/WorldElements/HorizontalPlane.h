@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -10,6 +10,7 @@
 #pragma once
 
 #include <mrpt/img/TColor.h>
+#include <mrpt/opengl/CSetOfObjects.h>
 #include <mrpt/opengl/CSetOfTexturedTriangles.h>
 #include <mrpt/opengl/CTexturedPlane.h>
 #include <mvsim/WorldElements/WorldElementBase.h>
@@ -24,26 +25,29 @@ class HorizontalPlane : public WorldElementBase
 	virtual ~HorizontalPlane();
 
 	virtual void loadConfigFrom(const rapidxml::xml_node<char>* root) override;
-	void poses_mutex_lock() override {}
-	void poses_mutex_unlock() override {}
+	// ------- Interface with "World" ------
+	void simul_pre_timestep(const TSimulContext& context) override;
+	void simul_post_timestep(const TSimulContext& context) override;
 
    protected:
 	virtual void internalGuiUpdate(
-		mrpt::opengl::COpenGLScene& viz, mrpt::opengl::COpenGLScene& physical,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& viz,
+		const mrpt::optional_ref<mrpt::opengl::COpenGLScene>& physical,
 		bool childrenOnly) override;
 
-	float m_x_min = -10, m_x_max = 10, m_y_min = -10, m_y_max = 10;
-	mrpt::img::TColor m_color = {0xa0, 0xa0, 0xa0, 0xff};
+	float x_min_ = -10, x_max_ = 10, y_min_ = -10, y_max_ = 10;
+	mrpt::img::TColor color_ = {0xa0, 0xa0, 0xa0, 0xff};
 
-	/** If defined, it overrides the plain color in m_color */
-	std::string m_textureFileName;
-	double m_textureSizeX = 1.0;
-	double m_textureSizeY = 1.0;
+	/** If defined, it overrides the plain color in color_ */
+	std::string textureFileName_;
+	double textureSizeX_ = 1.0;
+	double textureSizeY_ = 1.0;
 
-	float m_z = .0f;
-	std::string m_cull_faces = "NONE";
+	float z_ = .0f;
+	std::string cull_faces_ = "NONE";
 
-	mrpt::opengl::CTexturedPlane::Ptr m_gl_plane;
-	mrpt::opengl::CSetOfTexturedTriangles::Ptr m_gl_plane_text;
+	mrpt::opengl::CTexturedPlane::Ptr gl_plane_;
+	mrpt::opengl::CSetOfTexturedTriangles::Ptr gl_plane_text_;
+	mrpt::opengl::CSetOfObjects::Ptr glGroup_;
 };
 }  // namespace mvsim
