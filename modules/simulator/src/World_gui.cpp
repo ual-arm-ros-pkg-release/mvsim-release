@@ -30,9 +30,11 @@
 using namespace mvsim;
 using namespace std;
 
-void World::TGUI_Options::parse_from(const rapidxml::xml_node<char>& node)
+void World::TGUI_Options::parse_from(
+	const rapidxml::xml_node<char>& node, mrpt::system::COutputLogger& logger)
 {
-	parse_xmlnode_children_as_param(node, params, {}, "[World::TGUI_Options]");
+	parse_xmlnode_children_as_param(
+		node, params, {}, "[World::TGUI_Options]", &logger);
 }
 
 // Text labels unique IDs:
@@ -405,6 +407,10 @@ void World::internal_GUI_thread()
 		gui_.gui_win = mrpt::gui::CDisplayWindowGUI::Create(
 			"mvsim", guiOptions_.win_w, guiOptions_.win_h, cp);
 
+		// zmin / zmax of opengl viewport:
+		worldVisual_->getViewport()->setViewportClipDistances(
+			guiOptions_.clip_plane_min, guiOptions_.clip_plane_max);
+
 		// Add a background scene:
 		{
 			// we use the member scene worldVisual_ as the placeholder for the
@@ -438,6 +444,12 @@ void World::internal_GUI_thread()
 		cam.setCameraPointing(0.0f, .0f, .0f);
 		cam.setCameraProjective(!guiOptions_.ortho);
 		cam.setZoomDistance(guiOptions_.camera_distance);
+		cam.setAzimuthDegrees(guiOptions_.camera_azimuth_deg);
+		cam.setElevationDegrees(guiOptions_.camera_elevation_deg);
+		cam.setCameraFOV(guiOptions_.fov_deg);
+		cam.setCameraPointing(
+			guiOptions_.camera_point_to.x, guiOptions_.camera_point_to.y,
+			guiOptions_.camera_point_to.z);
 
 		// Main GUI loop
 		// ---------------------
