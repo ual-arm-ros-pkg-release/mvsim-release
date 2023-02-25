@@ -30,7 +30,9 @@
 #include <mvsim/VehicleBase.h>
 #include <mvsim/WorldElements/WorldElementBase.h>
 
+#include <functional>
 #include <list>
+#include <map>
 
 #if MVSIM_HAS_ZMQ && MVSIM_HAS_PROTOBUF
 // forward declarations:
@@ -316,10 +318,18 @@ class World : public mrpt::system::COutputLogger
 	auto& getListOfSimulableObjectsMtx() { return simulableObjectsMtx_; }
 
 	mrpt::system::CTimeLogger& getTimeLogger() { return timlogger_; }
+
 	/** Replace macros, prefix the base_path if input filename is relative, etc.
+	 *  \sa xmlPathToActualPath
 	 */
 	std::string local_to_abs_path(const std::string& in_path) const;
 
+	/** Parses URIs in all the forms explained in
+	 * RemoteResourcesManager::resolve_path(), then passes it through
+	 * local_to_abs_path().
+	 *
+	 *  \sa local_to_abs_path
+	 */
 	std::string xmlPathToActualPath(const std::string& modelURI) const;
 
 	/** @} */
@@ -446,7 +456,12 @@ class World : public mrpt::system::COutputLogger
 		bool show_sensor_points = true;
 		double force_scale = 0.01;	//!< In meters/Newton
 		double camera_distance = 80.0;
+		double camera_azimuth_deg = 45.0;
+		double camera_elevation_deg = 40.0;
 		double fov_deg = 60.0;
+		float clip_plane_min = 0.05f;
+		float clip_plane_max = 10e3f;
+		mrpt::math::TPoint3D camera_point_to{0, 0, 0};
 		std::string follow_vehicle;	 //!< Vehicle name to follow (empty=none)
 		bool headless = false;
 
@@ -462,10 +477,17 @@ class World : public mrpt::system::COutputLogger
 			{"start_maximized", {"%bool", &start_maximized}},
 			{"refresh_fps", {"%i", &refresh_fps}},
 			{"headless", {"%bool", &headless}},
+			{"clip_plane_min", {"%f", &clip_plane_min}},
+			{"clip_plane_max", {"%f", &clip_plane_max}},
+			{"cam_distance", {"%lf", &camera_distance}},
+			{"cam_azimuth", {"%lf", &camera_azimuth_deg}},
+			{"cam_elevation", {"%lf", &camera_elevation_deg}},
+			{"cam_point_to", {"%point3d", &camera_point_to}},
 		};
 
 		TGUI_Options() = default;
-		void parse_from(const rapidxml::xml_node<char>& node);
+		void parse_from(
+			const rapidxml::xml_node<char>& node, COutputLogger& logger);
 	};
 
 	/** Some of these options are only used the first time the GUI window is
@@ -579,10 +601,58 @@ class World : public mrpt::system::COutputLogger
 	void process_load_walls(const rapidxml::xml_node<char>& node);
 	void insertBlock(const Block::Ptr& block);
 
+	struct XmlParserContext
+	{
+		XmlParserContext(
+			const rapidxml::xml_node<char>* n, const std::string& basePath)
+			: node(n), currentBasePath(basePath)
+		{
+		}
+
+		const rapidxml::xml_node<char>* node = nullptr;
+		const std::string currentBasePath;
+	};
+
 	/// This will parse a main XML file, or its included
-	void internal_recursive_parse_XML(
-		const void* /*rapidxml::xml_node<>* */ node,
-		const std::string& currentBasePath);
+	void internal_recursive_parse_XML(const XmlParserContext& ctx);
+
+	using xml_tag_parser_function_t =
+		std::function<void(const XmlParserContext&)>;
+
+	std::map<std::string, xml_tag_parser_function_t> xmlParsers_;
+
+	void register_standard_xml_tag_parsers();
+
+	void register_tag_parser(
+		const std::string& xmlTagName, const xml_tag_parser_function_t& f)
+	{
+		xmlParsers_.emplace(xmlTagName, f);
+	}
+	void register_tag_parser(
+		const std::string& xmlTagName,
+		void (World::*f)(const XmlParserContext& ctx))
+	{
+		xmlParsers_.emplace(xmlTagName, [this, f](const XmlParserContext& ctx) {
+			(this->*f)(ctx);
+		});
+	}
+
+	// ======== XML parser tags ========
+	void parse_tag_element(const XmlParserContext& ctx);  //!< `<element>`
+	void parse_tag_vehicle(const XmlParserContext& ctx);  //!< `<vehicle>`
+	/** <vehicle:class> */
+	void parse_tag_vehicle_class(const XmlParserContext& ctx);
+	void parse_tag_sensor(const XmlParserContext& ctx);	 //!<  `<sensor>`
+	void parse_tag_block(const XmlParserContext& ctx);
+	void parse_tag_block_class(const XmlParserContext& ctx);
+	void parse_tag_gui(const XmlParserContext& ctx);
+	void parse_tag_walls(const XmlParserContext& ctx);
+	void parse_tag_include(const XmlParserContext& ctx);
+	void parse_tag_variable(const XmlParserContext& ctx);
+	void parse_tag_for(const XmlParserContext& ctx);
+	void parse_tag_if(const XmlParserContext& ctx);
+
+	// ======== end of XML parser tags ========
 
 	mutable RemoteResourcesManager remoteResources_;
 

@@ -142,7 +142,7 @@ VehicleBase::Ptr VehicleBase::factory(
 	// parameter
 	//  in the set of "root" + "class_root" XML nodes:
 	// --------------------------------------------------------------------------------
-	JointXMLnode<> veh_root_node;
+	JointXMLnode<> nodes;
 
 	std::vector<XML_Doc_Data::Ptr> scopedLifeDocs;
 
@@ -184,13 +184,13 @@ VehicleBase::Ptr VehicleBase::factory(
 		const auto newBasePath =
 			mrpt::system::trim(mrpt::system::extractFileDirectory(absFile));
 
-		veh_root_node.add(nRoot->parent());
+		nodes.add(nRoot->parent());
 	}
 
 	// ---
 	{
 		// Always search in root. Also in the class root, if any:
-		veh_root_node.add(root);
+		nodes.add(root);
 
 		const xml_attribute<>* veh_class = root->first_attribute("class");
 		if (veh_class)
@@ -203,14 +203,14 @@ VehicleBase::Ptr VehicleBase::factory(
 					"[VehicleBase::factory] Vehicle class '%s' undefined",
 					sClassName.c_str()));
 
-			veh_root_node.add(class_root);
+			nodes.add(class_root);
 			// cout << *class_root;
 		}
 	}
 
 	// Class factory according to: <dynamics class="XXX">
 	// -------------------------------------------------
-	const xml_node<>* dyn_node = veh_root_node.first_node("dynamics");
+	const xml_node<>* dyn_node = nodes.first_node("dynamics");
 	if (!dyn_node)
 		throw runtime_error(
 			"[VehicleBase::factory] Missing XML node <dynamics>");
@@ -247,11 +247,11 @@ VehicleBase::Ptr VehicleBase::factory(
 
 	// Common setup for simulable objects:
 	// -----------------------------------------------------------
-	veh->parseSimulable(veh_root_node);
+	veh->parseSimulable(nodes);
 
 	// Custom visualization 3D model:
 	// -----------------------------------------------------------
-	veh->parseVisual(veh_root_node.first_node("visual"));
+	veh->parseVisual(nodes);
 
 	// Initialize class-specific params (mass, chassis shape, etc.)
 	// ---------------------------------------------------------------
@@ -266,21 +266,20 @@ VehicleBase::Ptr VehicleBase::factory(
 				xml_chassis->first_node("shape_from_visual");
 			sfv)
 		{
-			mrpt::math::TPoint3D bbmin, bbmax;
-			veh->getVisualModelBoundingBox(bbmin, bbmax);
-			if (bbmin == bbmax)
+			const auto bb = veh->getVisualModelBoundingBox();
+			if (bb.volume() == 0)
 			{
 				THROW_EXCEPTION(
 					"Error: Tag <shape_from_visual/> found but bounding box of "
-					"visual object seems incorrect.");
+					"visual object seems incorrect, while parsing <vehicle>");
 			}
 
 			auto& poly = veh->chassis_poly_;
 			poly.clear();
-			poly.emplace_back(bbmin.x, bbmin.y);
-			poly.emplace_back(bbmin.x, bbmax.y);
-			poly.emplace_back(bbmax.x, bbmax.y);
-			poly.emplace_back(bbmax.x, bbmin.y);
+			poly.emplace_back(bb.min.x, bb.min.y);
+			poly.emplace_back(bb.min.x, bb.max.y);
+			poly.emplace_back(bb.max.x, bb.max.y);
+			poly.emplace_back(bb.max.x, bb.min.y);
 		}
 	}
 	veh->updateMaxRadiusFromPoly();
@@ -288,7 +287,7 @@ VehicleBase::Ptr VehicleBase::factory(
 	// <Optional> Log path. If not specified, app folder will be used
 	// -----------------------------------------------------------
 	{
-		const xml_node<>* log_path_node = veh_root_node.first_node("log_path");
+		const xml_node<>* log_path_node = nodes.first_node("log_path");
 		if (log_path_node)
 		{
 			// Parse:
@@ -318,7 +317,7 @@ VehicleBase::Ptr VehicleBase::factory(
 	// Parse <friction> node, or assume default linear model:
 	// -----------------------------------------------------------
 	{
-		const xml_node<>* frict_node = veh_root_node.first_node("friction");
+		const xml_node<>* frict_node = nodes.first_node("friction");
 		if (!frict_node)
 		{
 			// Default:
@@ -336,7 +335,7 @@ VehicleBase::Ptr VehicleBase::factory(
 
 	// Sensors: <sensor class='XXX'> entries
 	// -------------------------------------------------
-	for (const auto& xmlNode : veh_root_node)
+	for (const auto& xmlNode : nodes)
 	{
 		if (!strcmp(xmlNode->name(), "sensor"))
 		{
@@ -389,24 +388,25 @@ void VehicleBase::simul_pre_timestep(const TSimulContext& context)
 	}
 
 	// Apply motor forces/torques:
-	this->invoke_motor_controllers(context, torque_per_wheel_);
+	const std::vector<double> wheelTorque = invoke_motor_controllers(context);
 
 	// Apply friction model at each wheel:
 	const size_t nW = getNumWheels();
-	ASSERT_EQUAL_(torque_per_wheel_.size(), nW);
+	ASSERT_EQUAL_(wheelTorque.size(), nW);
 
-	const double gravity = getWorldObject()->get_gravity();
-	const double massPerWheel =
-		getChassisMass() / nW;	// Part of the vehicle weight on each wheel.
+	// Part of the vehicle weight on each wheel:
+	const double gravity = parent()->get_gravity();
+	MRPT_TODO("Use chassis cog point");
+	const double massPerWheel = getChassisMass() / nW;
 	const double weightPerWheel = massPerWheel * gravity;
 
-	std::vector<mrpt::math::TPoint2D> wheels_vels;
-	getWheelsVelocityLocal(wheels_vels, getVelocityLocal());
+	const std::vector<mrpt::math::TVector2D> wheelLocalVels =
+		getWheelsVelocityLocal(getVelocityLocal());
 
-	ASSERT_EQUAL_(wheels_vels.size(), nW);
+	ASSERT_EQUAL_(wheelLocalVels.size(), nW);
 
-	std::vector<mrpt::math::TSegment3D>
-		force_vectors;	// For visualization only
+	// For visualization only
+	std::vector<mrpt::math::TSegment3D> forceVectors, torqueVectors;
 
 	for (size_t i = 0; i < nW; i++)
 	{
@@ -414,21 +414,22 @@ void VehicleBase::simul_pre_timestep(const TSimulContext& context)
 		Wheel& w = getWheelInfo(i);
 
 		FrictionBase::TFrictionInput fi(context, w);
-		fi.motor_torque = -torque_per_wheel_[i];  // "-" => Forwards is negative
+		fi.motorTorque = -wheelTorque[i];  // "-" => Forwards is negative
 		fi.weight = weightPerWheel;
-		fi.wheel_speed = wheels_vels[i];
+		fi.wheelCogLocalVel = wheelLocalVels[i];
 
 		friction_->setLogger(
 			getLoggerPtr(LOGGER_WHEEL + std::to_string(i + 1)));
-		// eval friction:
-		mrpt::math::TPoint2D net_force_;
-		friction_->evaluate_friction(fi, net_force_);
+
+		// eval friction (in the frame of the vehicle):
+		const mrpt::math::TPoint2D F_r = friction_->evaluate_friction(fi);
 
 		// Apply force:
-		const b2Vec2 wForce = b2dBody_->GetWorldVector(b2Vec2(
-			net_force_.x, net_force_.y));  // Force vector -> world coords
-		const b2Vec2 wPt = b2dBody_->GetWorldPoint(
-			b2Vec2(w.x, w.y));	// Application point -> world coords
+		// Force vector -> world coords
+		const b2Vec2 wForce = b2dBody_->GetWorldVector(b2Vec2(F_r.x, F_r.y));
+		// Application point -> world coords
+		const b2Vec2 wPt = b2dBody_->GetWorldPoint(b2Vec2(w.x, w.y));
+
 		// printf("w%i: Lx=%6.3f Ly=%6.3f  | Gx=%11.9f
 		// Gy=%11.9f\n",(int)i,net_force_.x,net_force_.y,wForce.x,wForce.y);
 
@@ -439,37 +440,45 @@ void VehicleBase::simul_pre_timestep(const TSimulContext& context)
 			loggers_[LOGGER_WHEEL + std::to_string(i + 1)]->updateColumn(
 				DL_TIMESTAMP, context.simul_time);
 			loggers_[LOGGER_WHEEL + std::to_string(i + 1)]->updateColumn(
-				WL_TORQUE, fi.motor_torque);
+				WL_TORQUE, fi.motorTorque);
 			loggers_[LOGGER_WHEEL + std::to_string(i + 1)]->updateColumn(
 				WL_WEIGHT, fi.weight);
 			loggers_[LOGGER_WHEEL + std::to_string(i + 1)]->updateColumn(
-				WL_VEL_X, fi.wheel_speed.x);
+				WL_VEL_X, fi.wheelCogLocalVel.x);
 			loggers_[LOGGER_WHEEL + std::to_string(i + 1)]->updateColumn(
-				WL_VEL_Y, fi.wheel_speed.y);
+				WL_VEL_Y, fi.wheelCogLocalVel.y);
 			loggers_[LOGGER_WHEEL + std::to_string(i + 1)]->updateColumn(
-				WL_FRIC_X, net_force_.x);
+				WL_FRIC_X, F_r.x);
 			loggers_[LOGGER_WHEEL + std::to_string(i + 1)]->updateColumn(
-				WL_FRIC_Y, net_force_.y);
+				WL_FRIC_Y, F_r.y);
 		}
 
 		// save it for optional rendering:
 		if (world_->guiOptions_.show_forces)
 		{
-			const double forceScale =
-				world_->guiOptions_.force_scale;  // [meters/N]
+			// [meters/N]
+			const double forceScale = world_->guiOptions_.force_scale;
+
 			const mrpt::math::TPoint3D pt1(
 				wPt.x, wPt.y, chassis_z_max_ * 1.1 + getPose().z);
 			const mrpt::math::TPoint3D pt2 =
 				pt1 + mrpt::math::TPoint3D(wForce.x, wForce.y, 0) * forceScale;
-			force_vectors.push_back(mrpt::math::TSegment3D(pt1, pt2));
+
+			forceVectors.emplace_back(pt1, pt2);
+
+			const mrpt::math::TPoint3D pt2_t =
+				pt1 + mrpt::math::TPoint3D(0, 0, wheelTorque[i]) * forceScale;
+
+			torqueVectors.emplace_back(pt1, pt2_t);
 		}
 	}
 
 	// Save forces for optional rendering:
 	if (world_->guiOptions_.show_forces)
 	{
-		std::lock_guard<std::mutex> csl(force_segments_for_rendering_cs_);
-		force_segments_for_rendering_ = force_vectors;
+		std::lock_guard<std::mutex> csl(forceSegmentsForRenderingMtx_);
+		forceSegmentsForRendering_ = forceVectors;
+		torqueSegmentsForRendering_ = torqueVectors;
 	}
 }
 
@@ -522,8 +531,7 @@ void VehicleBase::simul_post_timestep(const TSimulContext& context)
 }
 
 /** Last time-step velocity of each wheel's center point (in local coords) */
-void VehicleBase::getWheelsVelocityLocal(
-	std::vector<mrpt::math::TPoint2D>& vels,
+std::vector<mrpt::math::TVector2D> VehicleBase::getWheelsVelocityLocal(
 	const mrpt::math::TTwist2D& veh_vel_local) const
 {
 	// Each wheel velocity is:
@@ -534,7 +542,8 @@ void VehicleBase::getWheelsVelocityLocal(
 	const double w = veh_vel_local.omega;  // vehicle w
 
 	const size_t nW = this->getNumWheels();
-	vels.resize(nW);
+	std::vector<mrpt::math::TVector2D> vels(nW);
+
 	for (size_t i = 0; i < nW; i++)
 	{
 		const Wheel& wheel = getWheelInfo(i);
@@ -542,6 +551,7 @@ void VehicleBase::getWheelsVelocityLocal(
 		vels[i].x = veh_vel_local.vx - w * wheel.y;
 		vels[i].y = veh_vel_local.vy + w * wheel.x;
 	}
+	return vels;
 }
 
 void VehicleBase::internal_internalGuiUpdate_sensors(
@@ -556,14 +566,19 @@ void VehicleBase::internal_internalGuiUpdate_forces(  //
 {
 	if (world_->guiOptions_.show_forces)
 	{
-		std::lock_guard<std::mutex> csl(force_segments_for_rendering_cs_);
-		gl_forces_->clear();
-		gl_forces_->appendLines(force_segments_for_rendering_);
-		gl_forces_->setVisibility(true);
+		std::lock_guard<std::mutex> csl(forceSegmentsForRenderingMtx_);
+		glForces_->clear();
+		glForces_->appendLines(forceSegmentsForRendering_);
+		glForces_->setVisibility(true);
+
+		glMotorTorques_->clear();
+		glMotorTorques_->appendLines(torqueSegmentsForRendering_);
+		glMotorTorques_->setVisibility(true);
 	}
 	else
 	{
-		gl_forces_->setVisibility(false);
+		glForces_->setVisibility(false);
+		glMotorTorques_->setVisibility(false);
 	}
 }
 
@@ -610,12 +625,12 @@ void VehicleBase::create_multibody_system(b2World& world)
 
 		// Set the box density to be non-zero, so it will be dynamic.
 		b2MassData mass;
-		chassisPoly.ComputeMass(
-			&mass, 1);	// Mass with density=1 => compute area
+		// Mass with density=1 => compute area
+		chassisPoly.ComputeMass(&mass, 1);
 		fixtureDef.density = chassis_mass_ / mass.mass;
 
 		// Override the default friction.
-		fixtureDef.friction = 0.3f;
+		fixtureDef.friction = 0;
 
 		// Add the shape to the body.
 		fixture_chassis_ = b2dBody_->CreateFixture(&fixtureDef);
@@ -664,18 +679,18 @@ void VehicleBase::internalGuiUpdate(
 	// 1st time call?? -> Create objects
 	// ----------------------------------
 	const size_t nWs = this->getNumWheels();
-	if (!gl_chassis_ && viz && physical)
+	if (!glChassis_ && viz && physical)
 	{
-		gl_chassis_ = mrpt::opengl::CSetOfObjects::Create();
-		gl_chassis_->setName("vehicle_chassis_"s + name_);
+		glChassis_ = mrpt::opengl::CSetOfObjects::Create();
+		glChassis_->setName("vehicle_chassis_"s + name_);
 
 		// Wheels shape:
-		gl_wheels_.resize(nWs);
+		glWheels_.resize(nWs);
 		for (size_t i = 0; i < nWs; i++)
 		{
-			gl_wheels_[i] = mrpt::opengl::CSetOfObjects::Create();
-			this->getWheelInfo(i).getAs3DObject(*gl_wheels_[i]);
-			gl_chassis_->insert(gl_wheels_[i]);
+			glWheels_[i] = mrpt::opengl::CSetOfObjects::Create();
+			this->getWheelInfo(i).getAs3DObject(*glWheels_[i]);
+			glChassis_->insert(glWheels_[i]);
 		}
 
 		if (!childrenOnly)
@@ -685,11 +700,11 @@ void VehicleBase::internalGuiUpdate(
 				chassis_poly_, chassis_z_max_ - chassis_z_min_);
 			gl_poly->setLocation(0, 0, chassis_z_min_);
 			gl_poly->setColor_u8(chassis_color_);
-			gl_chassis_->insert(gl_poly);
+			glChassis_->insert(gl_poly);
 		}
 
-		viz->get().insert(gl_chassis_);
-		physical->get().insert(gl_chassis_);
+		viz->get().insert(glChassis_);
+		physical->get().insert(glChassis_);
 	}
 
 	// Update them:
@@ -699,25 +714,50 @@ void VehicleBase::internalGuiUpdate(
 	// need/can't acquire it again:
 	const auto objectPose = viz.has_value() ? getPose() : getPoseNoLock();
 
-	if (gl_chassis_)
+	if (glChassis_)
 	{
-		gl_chassis_->setPose(objectPose);
+		glChassis_->setPose(objectPose);
 		for (size_t i = 0; i < nWs; i++)
 		{
 			const Wheel& w = getWheelInfo(i);
-			gl_wheels_[i]->setPose(mrpt::math::TPose3D(
+			glWheels_[i]->setPose(mrpt::math::TPose3D(
 				w.x, w.y, 0.5 * w.diameter, w.yaw, w.getPhi(), 0.0));
+
+			if (!w.linked_yaw_object_name.empty())
+			{
+				auto glLinked = VisualObject::glCustomVisual_->getByName(
+					w.linked_yaw_object_name);
+				if (!glLinked)
+				{
+					THROW_EXCEPTION_FMT(
+						"Wheel #%zu has linked_yaw_object_name='%s' but parent "
+						"vehicle '%s' does not have any custom visual group "
+						"with that name.",
+						i, w.linked_yaw_object_name.c_str(), name_.c_str());
+				}
+				auto p = glLinked->getPose();
+				p.yaw = w.yaw + w.linked_yaw_offset;
+				glLinked->setPose(p);
+			}
 		}
 	}
 
 	// Init on first use:
-	if (!gl_forces_ && viz)
+	if (!glForces_ && viz)
 	{
 		// Visualization of forces:
-		gl_forces_ = mrpt::opengl::CSetOfLines::Create();
-		gl_forces_->setLineWidth(3.0);
-		gl_forces_->setColor_u8(0xff, 0xff, 0xff);
-		viz->get().insert(gl_forces_);	// forces are in global coords
+		glForces_ = mrpt::opengl::CSetOfLines::Create();
+		glForces_->setLineWidth(3.0);
+		glForces_->setColor_u8(0xff, 0xff, 0xff);
+		viz->get().insert(glForces_);  // forces are in global coords
+	}
+	if (!glMotorTorques_ && viz)
+	{
+		// Visualization of forces:
+		glMotorTorques_ = mrpt::opengl::CSetOfLines::Create();
+		glMotorTorques_->setLineWidth(3.0);
+		glMotorTorques_->setColor_u8(0xff, 0x00, 0x00);
+		viz->get().insert(glMotorTorques_);	 // torques are in global coords
 	}
 
 	// Other common stuff:
@@ -795,8 +835,8 @@ void VehicleBase::registerOnServer(mvsim::Client& c)
 
 void VehicleBase::chassisAndWheelsVisible(bool visible)
 {
-	if (gl_chassis_) gl_chassis_->setVisibility(visible);
-	for (auto& glW : gl_wheels_)
+	if (glChassis_) glChassis_->setVisibility(visible);
+	for (auto& glW : glWheels_)
 	{
 		if (glW) glW->setVisibility(visible);
 	}

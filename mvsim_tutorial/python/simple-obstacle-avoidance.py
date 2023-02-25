@@ -11,20 +11,25 @@
 # export PYTHONPATH=$HOME/code/mvsim/build/:$PYTHONPATH
 #
 # Demo with N robots:
-# for i in $(seq 1 50); do bash -c "mvsim_tutorial/python/simple-obstacle-avoidance.py --vehicle veh${i} &"; done
+# for i in $(seq 1 25); do bash -c "mvsim_tutorial/python/simple-obstacle-avoidance.py --vehicle veh${i} &"; done
 #
 # ---------------------------------------------------------------------
 
 import argparse
 import time
 import math
+import random
 from mvsim_comms import pymvsim_comms
 from mvsim_msgs import SrvSetControllerTwist_pb2
 from mvsim_msgs import ObservationLidar2D_pb2
+from mvsim_msgs import SrvGetPose_pb2, SrvGetPoseAnswer_pb2
 
-OBS_AVOIDANCE_PERIOD = 0.1
-V_MAX = 1.0
-W_MAX = 1.0
+OBS_AVOIDANCE_PERIOD = 0.2  # s
+V_MAX = 1.0  # m/s
+VIRTUAL_TARGET_DIST = 2.0  # m
+NEW_TARGET_PERIOD_SECONDS = 10  # s
+RANDOM_TARGET_RANGE = 30
+TARGET_ATTRACTIVE_FORCE = 10
 
 parser = argparse.ArgumentParser(prog='simple-obstacle-avoidance')
 parser.add_argument('--vehicle', dest='vehicleName', action='store', required=True,
@@ -33,9 +38,15 @@ parser.add_argument('--vehicle', dest='vehicleName', action='store', required=Tr
 args = parser.parse_args()
 
 client = pymvsim_comms.mvsim.Client()
+random.seed()
 
 global prevLidarMsgTimestamp
 prevLidarMsgTimestamp = 0
+
+global prevGlobalGoalTimestamp
+global prevGlobalGoal
+prevGlobalGoal = [0, 0]
+prevGlobalGoalTimestamp = 0
 
 
 def sendRobotTwistSetpoint(client, robotName, vx, vy, w):
@@ -52,6 +63,15 @@ def sendRobotTwistSetpoint(client, robotName, vx, vy, w):
     req.twistSetPoint.wz = w
     # ret =
     client.callService('set_controller_twist', req.SerializeToString())
+
+
+def getRobotPose(client, robotName):
+    req = SrvGetPose_pb2.SrvGetPose()
+    req.objectId = robotName  # vehicle/robot/object name in MVSIM
+    ret = client.callService('get_pose', req.SerializeToString())
+    ans = SrvGetPoseAnswer_pb2.SrvGetPoseAnswer()
+    ans.ParseFromString(ret)
+    print(ans)
 
 
 def evalObstacleAvoidance(obs: ObservationLidar2D_pb2.ObservationLidar2D):
@@ -72,7 +92,7 @@ def evalObstacleAvoidance(obs: ObservationLidar2D_pb2.ObservationLidar2D):
         #
         # Obstacles:
         # Compute force strength:
-        mod = min(1e3, 1.0 / r)
+        mod = min(1e3, 1.0 / (r*r))
 
         # Add repulsive force:
         fx = -math.cos(ang) * mod
@@ -81,8 +101,11 @@ def evalObstacleAvoidance(obs: ObservationLidar2D_pb2.ObservationLidar2D):
         resultantForce[1] += fy * obsWeight
 
     # Target:
-    # mod = options.TARGET_ATTRACTIVE_FORCE
-    # resultantForce += [cos(ang) * mod, sin(ang) * mod]
+    # robotPose = getRobotPose(client, args.vehicleName)
+    # TODO: Compute relative vector
+    ang = 0
+    resultantForce[0] += math.cos(ang) * TARGET_ATTRACTIVE_FORCE
+    resultantForce[1] += math.sin(ang) * TARGET_ATTRACTIVE_FORCE
 
     # Result:
     desiredDirection = 0
@@ -90,14 +113,30 @@ def evalObstacleAvoidance(obs: ObservationLidar2D_pb2.ObservationLidar2D):
         desiredDirection = math.atan2(resultantForce[1], resultantForce[0])
 
     # Convert direction to differential-driven command:
-    v = V_MAX*math.cos(desiredDirection)
-    w = W_MAX*desiredDirection/math.pi * math.copysign(1.0, v)
+    # Build a "virtual target point" and calculate the (v,w) to drive there.
+    target_x = VIRTUAL_TARGET_DIST*math.cos(desiredDirection)
+    target_y = VIRTUAL_TARGET_DIST*math.sin(desiredDirection)
+
+    if (target_x < 0):
+        v = -V_MAX
+    else:
+        v = V_MAX
+
+    if (target_y == 0):
+        w = 0
+    else:
+        R = math.sqrt((target_x*target_x + target_y *
+                      target_y)/(2*abs(target_y)))
+        if (target_y < 0):
+            R = -R
+        w = v / R
 
     return [v, w]
 
 
 def onLidar2DMessage(msgType, msg):
     global prevLidarMsgTimestamp
+    global prevGlobalGoalTimestamp, prevGlobalGoal
 
     assert(msgType == "mvsim_msgs.ObservationLidar2D")
     p = ObservationLidar2D_pb2.ObservationLidar2D()
@@ -108,6 +147,11 @@ def onLidar2DMessage(msgType, msg):
         prevLidarMsgTimestamp = p.unixTimestamp
         [v, w] = evalObstacleAvoidance(p)
         sendRobotTwistSetpoint(client, args.vehicleName, v, 0, w)
+
+    if (p.unixTimestamp > prevGlobalGoalTimestamp+NEW_TARGET_PERIOD_SECONDS):
+        prevGlobalGoalTimestamp = p.unixTimestamp
+        prevGlobalGoal = [(-0.5+random.random())*RANDOM_TARGET_RANGE,
+                          (-0.5+random.random())*RANDOM_TARGET_RANGE]
 
 
 if __name__ == "__main__":
@@ -125,5 +169,5 @@ if __name__ == "__main__":
     client.subscribeTopic("/" + args.vehicleName +
                           "/laser1_scan", onLidar2DMessage)
 
-    time.sleep(20)
+    time.sleep(60)
     sendRobotTwistSetpoint(client, args.vehicleName, 0, 0, 0)

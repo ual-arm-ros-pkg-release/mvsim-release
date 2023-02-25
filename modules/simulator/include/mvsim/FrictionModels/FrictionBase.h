@@ -34,41 +34,41 @@ class FrictionBase
 	{
 		const TSimulContext& context;
 		Wheel& wheel;
-		double weight;	//!< Weight on this wheel from the car chassis
-						//!(Newtons), excluding the weight of the wheel itself.
-		double motor_torque;  //!< The force applied by the motor to the wheel
-							  //!(Nm). Negative means backwards, which makes the
-							  //! vehicle go forwards.
-		mrpt::math::TPoint2D wheel_speed;  //!< Instantaneous velocity vector
-										   //!(in local coords) of the wheel
-										   //! center point.
+
+		/** Weight on this wheel from the car chassis (Newtons), excluding the
+		 * weight of the wheel itself.
+		 */
+		double weight = 0;
+
+		/** The force applied by the motor to the wheel (Nm). Negative means
+		 * backwards, which makes the vehicle go forwards. */
+		double motorTorque = 0;
+
+		/** Instantaneous velocity vector (in local coordinates) of the wheel
+		 *  center of gravity (cog) point. */
+		mrpt::math::TVector2D wheelCogLocalVel{0, 0};
 
 		TFrictionInput(const TSimulContext& _context, Wheel& _wheel)
-			: context(_context),
-			  wheel(_wheel),
-			  weight(.0),
-			  motor_torque(.0),
-			  wheel_speed(0, 0)
+			: context(_context), wheel(_wheel)
 		{
 		}
 	};
 
-	/** Evaluates the net force on this wheel (in local coordinates). Refer to
-	 * the manual for the theorical model. */
-	virtual void evaluate_friction(
-		const FrictionBase::TFrictionInput& input,
-		mrpt::math::TPoint2D& out_result_force_local) const = 0;
+	/** Evaluates the net force on this wheel (in vehicle local coordinates).
+	 * Refer to the manual for the theorical model. */
+	virtual mrpt::math::TVector2D evaluate_friction(
+		const FrictionBase::TFrictionInput& input) const = 0;
 
 	void setLogger(const std::weak_ptr<CSVLogger>& logger);
 
    protected:
 	World* world_;
-	VehicleBase& my_vehicle_;
+	VehicleBase& myVehicle_;
 
 	std::weak_ptr<CSVLogger> logger_;
 };
 
-typedef std::shared_ptr<FrictionBase> FrictionBasePtr;
+using FrictionBasePtr = std::shared_ptr<FrictionBase>;
 
 // Class factory:
 typedef ClassFactory<
