@@ -80,11 +80,11 @@ Block::Ptr Block::factory(World* parent, const rapidxml::xml_node<char>* root)
 	// "class": When there is a 'class="XXX"' attribute, look for each parameter
 	//  in the set of "root" + "class_root" XML nodes:
 	// --------------------------------------------------------------------------------
-	JointXMLnode<> block_root_node;
+	JointXMLnode<> nodes;
 	const rapidxml::xml_node<char>* class_root = nullptr;
 	{
 		// Always search in root. Also in the class root, if any:
-		block_root_node.add(root);
+		nodes.add(root);
 		if (const xml_attribute<>* block_class = root->first_attribute("class");
 			block_class)
 		{
@@ -95,7 +95,7 @@ Block::Ptr Block::factory(World* parent, const rapidxml::xml_node<char>* root)
 					"[Block::factory] Block class '%s' undefined",
 					sClassName.c_str());
 
-			block_root_node.add(class_root);
+			nodes.add(class_root);
 		}
 	}
 
@@ -122,11 +122,11 @@ Block::Ptr Block::factory(World* parent, const rapidxml::xml_node<char>* root)
 
 	// Common setup for simulable objects:
 	// -----------------------------------------------------------
-	block->parseSimulable(block_root_node);
+	block->parseSimulable(nodes);
 
 	// Custom visualization 3D model:
 	// -----------------------------------------------------------
-	block->parseVisual(block_root_node.first_node("visual"));
+	block->parseVisual(nodes);
 
 	// Params:
 	// -----------------------------------------------------------
@@ -140,30 +140,28 @@ Block::Ptr Block::factory(World* parent, const rapidxml::xml_node<char>* root)
 
 	// Auto shape node from visual?
 	if (const rapidxml::xml_node<char>* xml_shape_viz =
-			block_root_node.first_node("shape_from_visual");
+			nodes.first_node("shape_from_visual");
 		xml_shape_viz)
 	{
-		mrpt::math::TPoint3D bbmin, bbmax;
-		block->getVisualModelBoundingBox(bbmin, bbmax);
-		if (bbmin == bbmax)
+		const auto bb = block->getVisualModelBoundingBox();
+		if (bb.volume() == 0)
 		{
 			THROW_EXCEPTION(
 				"Error: Tag <shape_from_visual/> found but bounding box of "
-				"visual object seems incorrect.");
+				"visual object seems incorrect, while parsing <block>");
 		}
 
 		block->block_poly_.clear();
-		block->block_poly_.emplace_back(bbmin.x, bbmin.y);
-		block->block_poly_.emplace_back(bbmin.x, bbmax.y);
-		block->block_poly_.emplace_back(bbmax.x, bbmax.y);
-		block->block_poly_.emplace_back(bbmax.x, bbmin.y);
+		block->block_poly_.emplace_back(bb.min.x, bb.min.y);
+		block->block_poly_.emplace_back(bb.min.x, bb.max.y);
+		block->block_poly_.emplace_back(bb.max.x, bb.max.y);
+		block->block_poly_.emplace_back(bb.max.x, bb.min.y);
 
 		block->updateMaxRadiusFromPoly();
 	}
 
 	// Shape node (optional, fallback to default shape if none found)
-	if (const rapidxml::xml_node<char>* xml_shape =
-			block_root_node.first_node("shape");
+	if (const rapidxml::xml_node<char>* xml_shape = nodes.first_node("shape");
 		xml_shape)
 	{
 		mvsim::parse_xmlnode_shape(
@@ -349,6 +347,9 @@ void Block::create_multibody_system(b2World& world)
 		// Add the shape to the body.
 		fixture_block_ = b2dBody_->CreateFixture(&fixtureDef);
 
+		// Static (does not move at all) vs dynamic object:
+		b2dBody_->SetType(isStatic_ ? b2_staticBody : b2_dynamicBody);
+
 		// Compute center of mass:
 		b2MassData vehMass;
 		fixture_block_->GetMassData(&vehMass);
@@ -360,7 +361,7 @@ void Block::create_multibody_system(b2World& world)
 	// -----------------------------------------------------------------
 	const size_t nContactPoints = 2;
 	const double weight_per_contact_point =
-		mass_ * getWorldObject()->get_gravity() / nContactPoints;
+		mass_ * parent()->get_gravity() / nContactPoints;
 	const double mu = groundFriction_;
 	const double max_friction = mu * weight_per_contact_point;
 

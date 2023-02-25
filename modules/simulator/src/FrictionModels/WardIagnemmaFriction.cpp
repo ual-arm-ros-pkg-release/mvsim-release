@@ -20,12 +20,7 @@ using namespace mvsim;
 static double sign(double x) { return (double)((x > 0) - (x < 0)); }
 WardIagnemmaFriction::WardIagnemmaFriction(
 	VehicleBase& my_vehicle, const rapidxml::xml_node<char>* node)
-	: FrictionBase(my_vehicle),
-	  mu_(0.8),
-	  C_damping_(1.0),
-	  A_roll_(50),
-	  R1_(0.08),
-	  R2_(0.05)
+	: FrictionBase(my_vehicle), mu_(0.8), C_damping_(1.0)
 {
 	// Sanity: we can tolerate node==nullptr (=> means use default params).
 	if (node && 0 != strcmp(node->name(), "friction"))
@@ -43,29 +38,25 @@ WardIagnemmaFriction::WardIagnemmaFriction(
 		params["R2"] = TParamEntry("%lf", &R2_);
 		// Parse XML params:
 		parse_xmlnode_children_as_param(
-			*node, params, world_->user_defined_variables());
+			*node, params, world_->user_defined_variables(),
+			"WardIagnemmaFriction", my_vehicle.parent() /*for logger*/);
 	}
-
-	MRPT_UNSCOPED_LOGGER_START;
-	MRPT_LOG_DEBUG("WardIagnemma Creates!");
-	MRPT_UNSCOPED_LOGGER_END;
 }
 
 // See docs in base class.
-void WardIagnemmaFriction::evaluate_friction(
-	const FrictionBase::TFrictionInput& input,
-	mrpt::math::TPoint2D& out_result_force_local) const
+mrpt::math::TVector2D WardIagnemmaFriction::evaluate_friction(
+	const FrictionBase::TFrictionInput& input) const
 {
 	// Rotate wheel velocity vector from veh. frame => wheel frame
 	const mrpt::poses::CPose2D wRot(0, 0, input.wheel.yaw);
 	const mrpt::poses::CPose2D wRotInv(0, 0, -input.wheel.yaw);
 	mrpt::math::TPoint2D vel_w;
-	wRotInv.composePoint(input.wheel_speed, vel_w);
+	wRotInv.composePoint(input.wheelCogLocalVel, vel_w);
 
 	// Action/Reaction, slippage, etc:
 	// --------------------------------------
 	const double mu = mu_;
-	const double gravity = my_vehicle_.getWorldObject()->get_gravity();
+	const double gravity = myVehicle_.parent()->get_gravity();
 	const double partial_mass = input.weight / gravity + input.wheel.mass;
 	const double max_friction = mu * partial_mass * gravity;
 
@@ -100,6 +91,7 @@ void WardIagnemmaFriction::evaluate_friction(
 	// Iyy_w * \Delta\omega_w = dt*\tau-  R*dt*Fri    -C_damp * \omega_w * dt
 	// "Damping" / internal friction of the wheel's shaft, etc.
 	const double C_damping = C_damping_;
+
 	// const mrpt::math::TPoint2D wheel_damping(- C_damping *
 	// input.wheel_speed.x, 0.0);
 
@@ -116,7 +108,7 @@ void WardIagnemmaFriction::evaluate_friction(
 
 	const double I_yy = input.wheel.Iyy;
 	//                                  There are torques this is force   v
-	double F_friction_lon = (input.motor_torque - I_yy * desired_wheel_alpha -
+	double F_friction_lon = (input.motorTorque - I_yy * desired_wheel_alpha -
 							 C_damping * input.wheel.getW()) /
 								R +
 							F_rr;
@@ -125,7 +117,7 @@ void WardIagnemmaFriction::evaluate_friction(
 	F_friction_lon = b2Clamp(F_friction_lon, -max_friction, max_friction);
 
 	// Recalc wheel ang. velocity impulse with this reduced force:
-	const double actual_wheel_alpha = (input.motor_torque - R * F_friction_lon -
+	const double actual_wheel_alpha = (input.motorTorque - R * F_friction_lon -
 									   C_damping * input.wheel.getW()) /
 									  I_yy;
 
@@ -141,5 +133,7 @@ void WardIagnemmaFriction::evaluate_friction(
 		wheel_long_friction, wheel_lat_friction);
 
 	// Rotate to put: Wheel frame ==> vehicle local framework:
-	wRot.composePoint(result_force_wrt_wheel, out_result_force_local);
+	mrpt::math::TVector2D res;
+	wRot.composePoint(result_force_wrt_wheel, res);
+	return res;
 }
