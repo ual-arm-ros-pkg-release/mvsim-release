@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -32,11 +32,17 @@ class ControllerBaseInterface
 	virtual void teleop_interface(
 		[[maybe_unused]] const TeleopInput& in,
 		[[maybe_unused]] TeleopOutput& out)
-	{ /*default: do nothing*/
+	{
+		/*default: do nothing*/
 	}
 
 	/** Accept a Twist command. \return true if the controller supports this
-	 * kind of commands, false otherwise */
+	 * kind of commands, false otherwise
+	 *
+	 *  Set these values to tell the controller the desired
+	 * setpoints for linear (vx) (m/s) and angular (omega) (rad/s)
+	 * velocities. Note that the "vy" component of the twist is ignored.
+	 */
 	virtual bool setTwistCommand([[maybe_unused]] const mrpt::math::TTwist2D& t)
 	{
 		return false; /* default: no */
@@ -50,7 +56,7 @@ class ControllerBaseTempl : public ControllerBaseInterface
    public:
 	using Ptr = std::shared_ptr<ControllerBaseTempl<VEH_DYNAMICS>>;
 
-	ControllerBaseTempl(VEH_DYNAMICS& veh) : m_veh(veh) {}
+	ControllerBaseTempl(VEH_DYNAMICS& veh) : veh_(veh) {}
 	virtual ~ControllerBaseTempl() {}
 	/** This is to handle basic need of all the controllers.*/
 	virtual void teleop_interface(
@@ -107,12 +113,12 @@ class ControllerBaseTempl : public ControllerBaseInterface
 
 	virtual void setLogRecording(bool recording)
 	{
-		m_veh.setRecording(recording);
+		veh_.setRecording(recording);
 	}
-	virtual void clearLogs() { m_veh.clearLogs(); }
-	virtual void newLogSession() { m_veh.newLogSession(); }
+	virtual void clearLogs() { veh_.clearLogs(); }
+	virtual void newLogSession() { veh_.newLogSession(); }
 
    protected:
-	VEH_DYNAMICS& m_veh;
+	VEH_DYNAMICS& veh_;
 };
 }  // namespace mvsim

@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -29,6 +29,8 @@ namespace mvsim
  * mrpt::poses::CPose3D
  *  - "%pose3d" => Expects "X Y Z YAW_DEG PITCH_DEG ROLL_DEG". "Val" is a
  * pointer to mrpt::poses::CPose3D
+ *  - "%point3d" => Expects "X Y [Z]". "Val" is a pointer to
+ * mrpt::math::TPoint3D
  *  - "%bool" ==> bool*. Values: 'true'/'false' or '1'/'0'
  *
  * \todo Rewrite using std::variant?

@@ -2,6 +2,80 @@
 Changelog for package mvsim
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.6.0 (2023-02-26)
+------------------
+* Support for SkyBox rendering (requires MRPT >=2.7.0)
+* More camera options in world.xml files (initial azimuth, elevation, etc.)
+* Terrain elevation models now support repeated textures (requires MRPT >=2.7.0)
+* Faster 3D Lidar rendering (Requires MRPT >=2.7.0)
+* Add Ouster OS1 sensor file
+* Fix default friction coefficients; draw motor torques too
+* More accurate Velodyne simulation based on sensor_rpm parameter
+* Clearer code and code style conventions
+* Add "<static>" XML tag for large, static world objects
+* Support for XML tag <if ...>
+* Refactor xml parser as a registry of tag->function
+* Examples renamed for conciseness: 'mvsim_demo\_*' to 'demo\_*'
+* Added a "greenhouse" example world
+* Wheels: allow linked-yaw-objects in vehicle viz
+* Support several <visual> tags in custom visualization models
+* pybind11 sources simplification.
+  Simplify into one single source tree with conditional compilation for different pybind versions.
+* Emit clearer warnings and earlier detection of wrong bounding boxes
+* Add reference to (preprint) paper
+* Controllers: Made threadsafe
+* Contributors: Fernando Cañadas, Jose Luis Blanco-Claraco
+* BUGFIX: program did not quit if using a non-existing launch file.
+* BUGFIX: unneeded friction coefficient for chassis body
+* BUGFIX: bbox for compound vehicle models
+* BUGFIX: <for> loops ignored more than one inner tag
+* BUGFIX: Add epsilon value for bbox determination in 3D models
+
+0.5.2 (2023-01-27)
+------------------
+* FIX build farm errors in armhf builds
+* Contributors: Jose Luis Blanco-Claraco
+
+0.5.1 (2023-01-26)
+------------------
+* FIX: Stuck unit test runs in armhf build farms
+* Add demo with a large number of robots (100) in a simple setup
+* Support <for> loops in world definition files
+* Contributors: Jose Luis Blanco-Claraco
+
+0.5.0 (2023-01-09)
+------------------
+* New warehouse demo world file, including ros2 launch.
+* New feature: download models from remote servers.
+* Add 3D Lidar sensor.
+* Add support for headless simulations (mvsim launch --headless), suitable for running inside docker containers
+* New world element: vertical planes.
+* Add <for /> loops in XML world files
+* Support for formulas in XML files via  exprtk expressions
+* Fix naming convention; fix warnings
+* Move to clang-format-11
+* More consistent class member naming convention
+* Add simple Velodyne sensor DAE model
+* Add wget as build and runtime dep
+* PubSub system: Implemented the feature to notify subscribed clients about a new publisher for a topic
+* New 3D model: pioneer3
+* ROS: Add build and test dep python3-protobuf
+* Added unit tests
+* mvsim cli: add the --realtime-factor flag
+* more topic echo types
+* publish 2D lidar observations as custom protobuf msgs too
+* Add new protobuf msg type ObservationLidar2D.proto
+* add shutdown service
+* Fixed Python topic subscription and parsing
+* avoid potential crash during shutdown
+* FIX: Timelogger verbosity level is now copied from the main World object.
+* BUGFIX: Lidar sensors with ignore_parent_body=true should neither see the wheels
+* Tune PID parameters of examples
+* Refactoring and simplification of mutexes
+* cache GetServiceInfoRequest() calls (more efficient service calls in comms::Client)
+* factorize World services into its own .cpp file for clarity
+* Contributors: Jose Luis Blanco-Claraco
+
 0.4.3 (2022-11-14)
 ------------------
 * add names to gl objects (useful to debug)
