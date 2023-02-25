@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -19,7 +19,7 @@ using namespace mvsim;
 
 DefaultFriction::DefaultFriction(
 	VehicleBase& my_vehicle, const rapidxml::xml_node<char>* node)
-	: FrictionBase(my_vehicle), m_mu(0.8), m_C_damping(1.0)
+	: FrictionBase(my_vehicle), mu_(0.8), C_damping_(1.0)
 {
 	// Sanity: we can tolerate node==nullptr (=> means use default params).
 	if (node && 0 != strcmp(node->name(), "friction"))
@@ -27,24 +27,26 @@ DefaultFriction::DefaultFriction(
 			"<friction>...</friction> XML node was expected!!");
 
 	// Parse XML params:
-	if (node) parse_xmlnode_children_as_param(*node, m_params);
+	if (node)
+		parse_xmlnode_children_as_param(
+			*node, params_, world_->user_defined_variables());
 }
 
 // See docs in base class.
-void DefaultFriction::evaluate_friction(
-	const FrictionBase::TFrictionInput& input,
-	mrpt::math::TPoint2D& out_result_force_local) const
+mrpt::math::TVector2D DefaultFriction::evaluate_friction(
+	const FrictionBase::TFrictionInput& input) const
 {
 	// Rotate wheel velocity vector from veh. frame => wheel frame
 	const mrpt::poses::CPose2D wRot(0, 0, input.wheel.yaw);
-	const mrpt::poses::CPose2D wRotInv(0, 0, -input.wheel.yaw);
-	mrpt::math::TPoint2D vel_w;
-	wRotInv.composePoint(input.wheel_speed, vel_w);
+
+	// Velocity of the wheel cog in the frame of the wheel itself:
+	const mrpt::math::TVector2D vel_w =
+		wRot.inverseComposePoint(input.wheelCogLocalVel);
 
 	// Action/Reaction, slippage, etc:
 	// --------------------------------------
-	const double mu = m_mu;
-	const double gravity = m_my_vehicle.getWorldObject()->get_gravity();
+	const double mu = mu_;
+	const double gravity = myVehicle_.parent()->get_gravity();
 	const double partial_mass = input.weight / gravity + input.wheel.mass;
 	const double max_friction = mu * partial_mass * gravity;
 
@@ -70,20 +72,22 @@ void DefaultFriction::evaluate_friction(
 	// required wheel \omega:case '4':
 	const double R = 0.5 * input.wheel.diameter;  // Wheel radius
 	const double lon_constraint_desired_wheel_w = vel_w.x / R;
+
 	const double desired_wheel_w_impulse =
 		(lon_constraint_desired_wheel_w - input.wheel.getW());
+
 	const double desired_wheel_alpha =
 		desired_wheel_w_impulse / input.context.dt;
 
 	// (eq. 3)==> Find out F_r
 	// Iyy_w * \Delta\omega_w = dt*\tau-  R*dt*Fri    -C_damp * \omega_w * dt
 	// "Damping" / internal friction of the wheel's shaft, etc.
-	const double C_damping = m_C_damping;
+	const double C_damping = C_damping_;
 	// const mrpt::math::TPoint2D wheel_damping(- C_damping *
 	// input.wheel_speed.x, 0.0);
 
 	const double I_yy = input.wheel.Iyy;
-	double F_friction_lon = (input.motor_torque - I_yy * desired_wheel_alpha -
+	double F_friction_lon = (input.motorTorque - I_yy * desired_wheel_alpha -
 							 C_damping * input.wheel.getW()) /
 							R;
 
@@ -91,7 +95,7 @@ void DefaultFriction::evaluate_friction(
 	F_friction_lon = b2Clamp(F_friction_lon, -max_friction, max_friction);
 
 	// Recalc wheel ang. velocity impulse with this reduced force:
-	const double actual_wheel_alpha = (input.motor_torque - R * F_friction_lon -
+	const double actual_wheel_alpha = (input.motorTorque - R * F_friction_lon -
 									   C_damping * input.wheel.getW()) /
 									  I_yy;
 
@@ -107,5 +111,7 @@ void DefaultFriction::evaluate_friction(
 		wheel_long_friction, wheel_lat_friction);
 
 	// Rotate to put: Wheel frame ==> vehicle local framework:
-	wRot.composePoint(result_force_wrt_wheel, out_result_force_local);
+	mrpt::math::TVector2D res;
+	wRot.composePoint(result_force_wrt_wheel, res);
+	return res;
 }

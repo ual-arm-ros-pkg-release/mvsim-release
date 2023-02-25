@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -18,7 +18,7 @@
 namespace mvsim
 {
 /** The default friction model for interaction between each wheel-ground contact
- * point
+ * point. No rolling resistance.
  */
 class DefaultFriction : public FrictionBase
 {
@@ -28,16 +28,15 @@ class DefaultFriction : public FrictionBase
 		VehicleBase& my_vehicle, const rapidxml::xml_node<char>* node);
 
 	// See docs in base class.
-	virtual void evaluate_friction(
-		const FrictionBase::TFrictionInput& input,
-		mrpt::math::TPoint2D& out_result_force_local) const override;
+	virtual mrpt::math::TVector2D evaluate_friction(
+		const FrictionBase::TFrictionInput& input) const override;
 
    private:
-	double m_mu;  //!< friction coeficient (non-dimensional)
-	double m_C_damping;	 //!< For wheels "internal friction" (N*m*s/rad)
+	double mu_;	 //!< friction coeficient (non-dimensional)
+	double C_damping_;	//!< For wheels "internal friction" (N*m*s/rad)
 
    public:
-	const TParameterDefinitions m_params = {
-		{"mu", {"%lf", &m_mu}}, {"C_damping", {"%lf", &m_C_damping}}};
+	const TParameterDefinitions params_ = {
+		{"mu", {"%lf", &mu_}}, {"C_damping", {"%lf", &C_damping_}}};
 };
 }  // namespace mvsim

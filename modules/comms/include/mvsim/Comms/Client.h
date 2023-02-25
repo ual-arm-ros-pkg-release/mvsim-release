@@ -1,7 +1,7 @@
 /*+-------------------------------------------------------------------------+
   |                       MultiVehicle simulator (libmvsim)                 |
   |                                                                         |
-  | Copyright (C) 2014-2022  Jose Luis Blanco Claraco                       |
+  | Copyright (C) 2014-2023  Jose Luis Blanco Claraco                       |
   | Copyright (C) 2017  Borys Tymchenko (Odessa Polytechnic University)     |
   | Distributed under 3-clause BSD License                                  |
   |   See COPYING                                                           |
@@ -102,11 +102,13 @@ class Client : public mrpt::system::COutputLogger
 	/// Overload for python wrapper
 	std::string callService(
 		const std::string& serviceName, const std::string& inputSerializedMsg);
-	/// Overload for python wrapper
+
+	/// Overload for python wrapper (callback accepts bytes-string)
 	void subscribeTopic(
 		const std::string& topicName,
-		const std::function<void(const std::string& /*serializedMsg*/)>&
-			callback);
+		const std::function<void(
+			const std::string& /*msgType*/,
+			const std::vector<uint8_t>& /*serializedMsg*/)>& callback);
 
 	struct InfoPerNode
 	{
@@ -141,6 +143,9 @@ class Client : public mrpt::system::COutputLogger
 
 	std::thread serviceInvokerThread_;
 	std::thread topicUpdatesThread_;
+
+	std::map<std::string, std::string> serviceToEndPointCache_;
+	std::mutex serviceToEndPointCacheMtx_;
 
 	mrpt::system::CTimeLogger profiler_{false, "mvsim::Client"};
 
