@@ -1,3 +1,26 @@
+## mvsim (noetic) - 0.6.1-1
+
+The packages in the `mvsim` repository were released into the `noetic` distro by running `/usr/bin/bloom-release -y --ros-distro noetic mvsim` on `Sat, 04 Mar 2023 01:19:48 -0000`
+
+The `mvsim` package was released.
+
+Version of package(s) in repository `mvsim`:
+
+- upstream repository: https://github.com/ual-arm-ros-pkg/mvsim.git
+- release repository: https://github.com/ual-arm-ros-pkg-release/mvsim-release.git
+- rosdistro version: `0.5.2-1`
+- old version: `0.6.0-1`
+- new version: `0.6.1-1`
+
+Versions of tools used:
+
+- bloom version: `0.11.2`
+- catkin_pkg version: `0.5.2`
+- rosdep version: `0.22.1`
+- rosdistro version: `0.9.0`
+- vcstools version: `0.1.42`
+
+
 ## mvsim (melodic) - 0.6.0-1
 
 The packages in the `mvsim` repository were released into the `melodic` distro by running `/usr/bin/bloom-release -y --ros-distro melodic mvsim` on `Sat, 25 Feb 2023 23:54:05 -0000`
