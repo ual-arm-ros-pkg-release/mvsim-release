@@ -465,6 +465,12 @@ class World : public mrpt::system::COutputLogger
 		std::string follow_vehicle;	 //!< Vehicle name to follow (empty=none)
 		bool headless = false;
 
+		bool enable_shadows = true;
+		int shadow_map_size = 2048;
+
+		double light_azimuth = mrpt::DEG2RAD(45.0);
+		double light_elevation = mrpt::DEG2RAD(70.0);
+
 		const TParameterDefinitions params = {
 			{"win_w", {"%u", &win_w}},
 			{"win_h", {"%u", &win_h}},
@@ -483,6 +489,10 @@ class World : public mrpt::system::COutputLogger
 			{"cam_azimuth", {"%lf", &camera_azimuth_deg}},
 			{"cam_elevation", {"%lf", &camera_elevation_deg}},
 			{"cam_point_to", {"%point3d", &camera_point_to}},
+			{"enable_shadows", {"%bool", &enable_shadows}},
+			{"shadow_map_size", {"%i", &shadow_map_size}},
+			{"light_azimuth_deg", {"%lf_deg", &light_azimuth}},
+			{"light_elevation_deg", {"%lf_deg", &light_elevation}},
 		};
 
 		TGUI_Options() = default;
@@ -592,6 +602,11 @@ class World : public mrpt::system::COutputLogger
 		const std::string& label, const mrpt::img::CImage& im, int winPosX);
 
 	std::map<std::string, nanogui::Window*> guiObsViz_;	 //!< by sensorLabel
+
+	/** Changes the light source direction from azimuth and elevation angles (in
+	 * radians) */
+	void setLightDirectionFromAzimuthElevation(
+		const float azimuth, const float elevation);
 
 	/** @} */  // end GUI stuff
 
