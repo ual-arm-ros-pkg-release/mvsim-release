@@ -50,6 +50,7 @@ void VerticalPlane::loadConfigFrom(const rapidxml::xml_node<char>* root)
 
 	TParameterDefinitions params;
 	params["color"] = TParamEntry("%color", &color_);
+	params["enable_shadows"] = TParamEntry("%bool", &enableShadows_);
 
 	params["x0"] = TParamEntry("%f", &x0_);
 	params["x1"] = TParamEntry("%f", &x1_);
@@ -153,6 +154,10 @@ void VerticalPlane::internalGuiUpdate(
 		gl_plane_->setPose(p);
 		gl_plane_->setName("VerticalPlane_"s + getName());
 
+#if MRPT_VERSION >= 0x270
+		gl_plane_->enableLighting(enableShadows_);
+#endif
+
 		gl_plane_->setColor_u8(color_);
 
 #if MRPT_VERSION >= 0x240
@@ -192,6 +197,8 @@ void VerticalPlane::internalGuiUpdate(
 		gl_plane_text_ = mrpt::opengl::CSetOfTexturedTriangles::Create();
 		gl_plane_text_->setName("VerticalPlane_"s + getName());
 
+		gl_plane_text_->enableLight(enableShadows_);
+
 		{
 			mrpt::opengl::CSetOfTexturedTriangles::TTriangle t;
 			t.vertices[0].xyzrgba.pt = {x0_, y0_, z_};
@@ -202,6 +209,7 @@ void VerticalPlane::internalGuiUpdate(
 			t.vertices[1].uv = {u_max, v_min};
 			t.vertices[2].uv = {u_max, v_max};
 
+			t.computeNormals();
 			gl_plane_text_->insertTriangle(t);
 		}
 		{
@@ -214,6 +222,7 @@ void VerticalPlane::internalGuiUpdate(
 			t.vertices[1].uv = {u_max, v_max};
 			t.vertices[2].uv = {u_min, v_max};
 
+			t.computeNormals();
 			gl_plane_text_->insertTriangle(t);
 		}
 
