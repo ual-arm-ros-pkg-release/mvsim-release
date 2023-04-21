@@ -5,7 +5,7 @@
   <description>A lightweight multivehicle simulation framework.</description>
 
   <!-- All version numbers in CMake scripts are taken from this line: -->
-  <version>0.6.1</version>
+  <version>0.7.0</version>
 
   <maintainer email="jlblanco@ual.es">Jose-Luis Blanco-Claraco</maintainer>
   <license>BSD</license>
@@ -28,7 +28,6 @@
   <depend>nav_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
-  <depend>box2d-dev</depend>
   <depend>libzmq3-dev</depend>
   <depend>boost</depend>
   <depend>pybind11-dev</depend>

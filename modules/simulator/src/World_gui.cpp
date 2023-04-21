@@ -38,8 +38,12 @@ void World::TGUI_Options::parse_from(
 		node, params, {}, "[World::TGUI_Options]", &logger);
 }
 
-// Text labels unique IDs:
-size_t ID_GLTEXT_CLOCK = 0;
+void World::LightOptions::parse_from(
+	const rapidxml::xml_node<char>& node, mrpt::system::COutputLogger& logger)
+{
+	parse_xmlnode_children_as_param(
+		node, params, {}, "[World::LightOptions]", &logger);
+}
 
 //!< Return true if the GUI window is open, after a previous call to
 //! update_GUI()
@@ -65,8 +69,7 @@ void World::GUI::prepare_control_window()
 
 	w->add<nanogui::Button>("Quit", ENTYPO_ICON_ARROW_BOLD_LEFT)
 		->setCallback([this]() {
-			parent_.gui_thread_must_close(true);
-
+			parent_.simulator_must_close(true);
 			gui_win->setVisible(false);
 			nanogui::leave();
 		});
@@ -90,6 +93,41 @@ void World::GUI::prepare_control_window()
 	w->add<nanogui::CheckBox>("Orthogonal view", [&](bool b) {
 		 gui_win->camera().setCameraProjective(!b);
 	 })->setChecked(parent_.guiOptions_.ortho);
+
+#if MRPT_VERSION >= 0x270
+	w->add<nanogui::CheckBox>("Enable shadows", [&](bool b) {
+		 auto vv = parent_.worldVisual_->getViewport();
+		 auto vp = parent_.worldPhysical_.getViewport();
+		 vv->enableShadowCasting(b);
+		 vp->enableShadowCasting(b);
+		 parent_.lightOptions_.enable_shadows = b;
+	 })->setChecked(parent_.lightOptions_.enable_shadows);
+#endif
+
+	w->add<nanogui::Label>("Light azimuth:");
+	{
+		auto sl = w->add<nanogui::Slider>();
+		sl->setRange({-M_PI, M_PI});
+		sl->setValue(parent_.lightOptions_.light_azimuth);
+		sl->setCallback([this](float v) {
+			parent_.lightOptions_.light_azimuth = v;
+			parent_.setLightDirectionFromAzimuthElevation(
+				parent_.lightOptions_.light_azimuth,
+				parent_.lightOptions_.light_elevation);
+		});
+	}
+	w->add<nanogui::Label>("Light elevation:");
+	{
+		auto sl = w->add<nanogui::Slider>();
+		sl->setRange({0, M_PI * 0.5});
+		sl->setValue(parent_.lightOptions_.light_elevation);
+		sl->setCallback([this](float v) {
+			parent_.lightOptions_.light_elevation = v;
+			parent_.setLightDirectionFromAzimuthElevation(
+				parent_.lightOptions_.light_azimuth,
+				parent_.lightOptions_.light_elevation);
+		});
+	}
 
 	w->add<nanogui::CheckBox>("View forces", [&](bool b) {
 		 parent_.guiOptions_.show_forces = b;
@@ -115,6 +153,16 @@ void World::GUI::prepare_control_window()
 		 const auto& objs = SensorBase::GetAllSensorsFOVViz();
 		 for (const auto& o : *objs) o->setVisibility(b);
 	 })->setChecked(false);
+
+	w->add<nanogui::CheckBox>("View collision shapes", [&](bool b) {
+		 auto lck = mrpt::lockHelper(parent_.simulableObjectsMtx_);
+		 for (auto& s : parent_.simulableObjects_)
+		 {
+			 auto* vis = dynamic_cast<VisualObject*>(s.second.get());
+			 if (!vis) continue;
+			 vis->showCollisionShape(b);
+		 }
+	 })->setChecked(false);
 }
 
 // Add Status window
@@ -126,7 +174,7 @@ void World::GUI::prepare_status_window()
 	nanogui::Window* w = new nanogui::Window(gui_win.get(), "Status");
 #endif
 
-	w->setPosition({5, 255});
+	w->setPosition({5, 455});
 	w->setLayout(new nanogui::BoxLayout(
 		nanogui::Orientation::Vertical, nanogui::Alignment::Fill));
 	w->setFixedWidth(320);
@@ -244,7 +292,7 @@ void World::GUI::prepare_editor_window()
 			cb->setCallback([cb, ipo, this](bool check) {
 				// deselect former one:
 				if (gui_selectedObject.visual)
-					gui_selectedObject.visual->showBoundingBox(false);
+					gui_selectedObject.visual->showCollisionShape(false);
 				if (gui_selectedObject.cb)
 					gui_selectedObject.cb->setChecked(false);
 				gui_selectedObject = InfoPerObject();
@@ -255,7 +303,7 @@ void World::GUI::prepare_editor_window()
 				if (ipo.visual && check)
 				{
 					gui_selectedObject = ipo;
-					ipo.visual->showBoundingBox(true);
+					ipo.visual->showCollisionShape(true);
 				}
 
 				const bool btnsEnabled = !!gui_selectedObject.simulable;
@@ -452,21 +500,42 @@ void World::internal_GUI_thread()
 			guiOptions_.camera_point_to.x, guiOptions_.camera_point_to.y,
 			guiOptions_.camera_point_to.z);
 
+		const auto& lo = lightOptions_;
+
 		setLightDirectionFromAzimuthElevation(
-			guiOptions_.light_azimuth, guiOptions_.light_elevation);
+			lo.light_azimuth, lo.light_elevation);
 
 #if MRPT_VERSION >= 0x270
 		auto vv = worldVisual_->getViewport();
 		auto vp = worldPhysical_.getViewport();
 
-		const int sms = guiOptions_.shadow_map_size;
-		vv->enableShadowCasting(guiOptions_.enable_shadows, sms, sms);
-		vp->enableShadowCasting(guiOptions_.enable_shadows, sms, sms);
+		auto lambdaSetLightParams =
+			[&lo](const mrpt::opengl::COpenGLViewport::Ptr& v) {
+				// enable shadows and set the shadow map texture size:
+				const int sms = lo.shadow_map_size;
+				v->enableShadowCasting(lo.enable_shadows, sms, sms);
 
-		// TODO: expose as parameters
-		vv->setLightShadowClipDistances(0.01f, 1000.0f);
-		vp->setLightShadowClipDistances(0.01f, 1000.0f);
+				// light color:
+				const auto colf = mrpt::img::TColorf(lo.light_color);
 
+				auto& vlp = v->lightParameters();
+
+				vlp.color = colf;
+
+				// light view frustrum near/far planes:
+				v->setLightShadowClipDistances(
+					lo.light_clip_plane_min, lo.light_clip_plane_max);
+
+			// Shadow bias should be proportional to clip range:
+#if MRPT_VERSION >= 0x281
+				vlp.shadow_bias = lo.shadow_bias;
+				vlp.shadow_bias_cam2frag = lo.shadow_bias_cam2frag;
+				vlp.shadow_bias_normal = lo.shadow_bias_normal;
+#endif
+			};
+
+		lambdaSetLightParams(vv);
+		lambdaSetLightParams(vp);
 #endif
 
 		// Main GUI loop
@@ -502,15 +571,28 @@ void World::internal_GUI_thread()
 		// The GUI must be closed from this same thread. Use a shared atomic
 		// bool:
 		auto lambdaLoopCallback = [](World& me) {
-			if (me.gui_thread_must_close()) nanogui::leave();
+			if (me.simulator_must_close()) nanogui::leave();
 
-			// Update 3D vehicles, sensors, run render-based sensors, etc:
-			me.internalGraphicsLoopTasksForSimulation();
+			try
+			{
+				// Update 3D vehicles, sensors, run render-based sensors, etc:
+				me.internalGraphicsLoopTasksForSimulation();
 
-			me.internal_process_pending_gui_user_tasks();
+				me.internal_process_pending_gui_user_tasks();
 
-			// handle mouse operations:
-			me.gui_.handle_mouse_operations();
+				// handle mouse operations:
+				me.gui_.handle_mouse_operations();
+			}
+			catch (const std::exception& e)
+			{
+				// In case of an exception in the functions above,
+				// abort. Otherwise, the error may repeat over and over forever
+				// and the main thread will never know about it.
+				me.logStr(mrpt::system::LVL_ERROR, e.what());
+				me.simulator_must_close(true);
+				me.gui_.gui_win->setVisible(false);
+				nanogui::leave();
+			}
 		};
 
 #if MRPT_VERSION >= 0x232
@@ -551,7 +633,7 @@ void World::internal_GUI_thread()
 		MRPT_LOG_DEBUG("[World::internal_GUI_thread] Mainloop ended.");
 
 		// to let other threads know that we are closing:
-		gui_thread_must_close(true);
+		simulator_must_close(true);
 
 		// Make sure opengl resources are freed from this thread, not from
 		// the main one upon destruction of the last ref to shared_ptr's to
@@ -946,24 +1028,35 @@ mrpt::math::TPoint2D World::internal_gui_on_image(
 
 void World::internalGraphicsLoopTasksForSimulation()
 {
-	// Update all GUI elements:
-	ASSERT_(worldVisual_);
-
-	auto lckPhys = mrpt::lockHelper(physical_objects_mtx());
-
-	internalUpdate3DSceneObjects(*worldVisual_, worldPhysical_);
-
-	internalRunSensorsOn3DScene(worldPhysical_);
-
-	lckPhys.unlock();
-
-	// handle user custom 3D visual objects:
+	try
 	{
-		const auto lck = mrpt::lockHelper(guiUserObjectsMtx_);
-		// replace list of smart pointers (fast):
-		if (guiUserObjectsPhysical_)
-			*glUserObjsPhysical_ = *guiUserObjectsPhysical_;
-		if (guiUserObjectsViz_) *glUserObjsViz_ = *guiUserObjectsViz_;
+		// Update all GUI elements:
+		ASSERT_(worldVisual_);
+
+		auto lckPhys = mrpt::lockHelper(physical_objects_mtx());
+
+		internalUpdate3DSceneObjects(*worldVisual_, worldPhysical_);
+
+		internalRunSensorsOn3DScene(worldPhysical_);
+
+		lckPhys.unlock();
+
+		// handle user custom 3D visual objects:
+		{
+			const auto lck = mrpt::lockHelper(guiUserObjectsMtx_);
+			// replace list of smart pointers (fast):
+			if (guiUserObjectsPhysical_)
+				*glUserObjsPhysical_ = *guiUserObjectsPhysical_;
+			if (guiUserObjectsViz_) *glUserObjsViz_ = *guiUserObjectsViz_;
+		}
+	}
+	catch (const std::exception& e)
+	{
+		// In case of an exception in the functions above,
+		// abort. Otherwise, the error may repeat over and over forever
+		// and the main thread will never know about it.
+		MRPT_LOG_ERROR(e.what());
+		simulator_must_close(true);
 	}
 }
 
