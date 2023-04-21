@@ -49,8 +49,15 @@ configure_file(
 	)
 #----
 
+# This is required for pybind11 to generate C++17 code in all OS versions:
+set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ version selection")
+set(CMAKE_CXX_STANDARD_REQUIRED ON)  # optional, ensure standard is supported
+set(CMAKE_CXX_EXTENSIONS OFF)  # optional, keep compiler extensions off
+
+
 find_package(Threads)
 include(GNUInstallDirs)
+include(cmake/mvsim_cmake_functions.cmake REQUIRED)
 
 if (POLICY CMP0057)
 	cmake_policy(SET CMP0057 NEW) # IN_LIST (needed by pybind11 cmake scripts)
@@ -180,26 +187,8 @@ set(CMAKE_DEBUG_POSTFIX "-dbg")
 # Global compiler flags
 # --------------------------
 if(MSVC)
-	# Warnings level
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3")
 	# Force usage of UNICODE projects, which is not the default in MSVC:
 	add_definitions(-DUNICODE -D_UNICODE)
-endif()
-
-if (CMAKE_COMPILER_IS_GNUCXX OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-	# High level of warnings.
-	# The -Wno-long-long is required in 64bit systems when including sytem headers.
-	# The -Wno-variadic-macros was needed for Eigen3, StdVector.h
-	add_compile_options(-Wall -Wno-long-long -Wno-variadic-macros)
-	# Workaround: Eigen <3.4 produces *tons* of warnings in GCC >=6. See http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1221
-	if (NOT ${CMAKE_CXX_COMPILER_VERSION} LESS "6.0")
-		add_compile_options(-Wno-ignored-attributes -Wno-int-in-bool-context)
-	endif()
-  # Set optimized building:
-endif()
-
-if(CMAKE_COMPILER_IS_GNUCXX AND NOT CMAKE_BUILD_TYPE MATCHES "Debug")
-  add_compile_options(-O3)
 endif()
 
 # ----------------------------------------------------------
@@ -221,7 +210,10 @@ set(EMBEDDED_box2d_DIR "${EMBEDDED_box2d_INSTALL_DIR}/lib/cmake/box2d/")
 # 1st) Try to locate it via CMake (installed in the system or precompiled somewhere)
 # Since box2d 2.4.1, the name changed "Box2D" -> "box2d". We now only support the version >=2.4.x
 # for compatibility with modern Ubuntu distros:
-find_package(box2d QUIET) # Defines: box2d::box2d
+#
+# Update: Since MVSIM 0.7.0, we now always ship a custom build of box2d to 
+# increase its default maximum number of polygon vertices:
+##find_package(box2d QUIET) # Defines: box2d::box2d
 
 if (NOT box2d_FOUND)
 	message(STATUS "--- Running CMake on external submodule 'box2d'...")
@@ -299,19 +291,8 @@ if (BUILD_FOR_ROS)
 		mvsim_node_src/mvsim_node_main.cpp
 		mvsim_node_src/include/mvsim/mvsim_node_core.h
 	)
-
-	if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-		# High level of warnings.
-		target_compile_options(mvsim_node PRIVATE -Wall -Wextra -Wpedantic)
-
-		# The -Wno-long-long is required in 64bit systems when including sytem headers.
-		# The -Wno-variadic-macros was needed for Eigen3, StdVector.h
-		target_compile_options(mvsim_node PUBLIC -Wno-long-long -Wno-variadic-macros)
-		# Workaround: Eigen <3.4 produces *tons* of warnings in GCC >=6. See http://eigen.tuxfamily.org/bz/show_bug.cgi?id=1221
-		if (NOT ${CMAKE_CXX_COMPILER_VERSION} LESS "6.0")
-			target_compile_options(mvsim_node PUBLIC -Wno-ignored-attributes -Wno-int-in-bool-context)
-		endif()
-	endif()
+	
+	mvsim_set_target_build_options(mvsim_node)
 
 	target_include_directories(mvsim_node PRIVATE "mvsim_node_src/include")
 
