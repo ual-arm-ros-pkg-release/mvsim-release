@@ -93,7 +93,7 @@ class MVSimNode
 		std::make_shared<mvsim::World>();
 
 	mrpt::WorkerThreadsPool ros_publisher_workers_{
-		3 /*threads*/, mrpt::WorkerThreadsPool::POLICY_DROP_OLD};
+		4 /*threads*/, mrpt::WorkerThreadsPool::POLICY_FIFO};
 
 	/// (Defaul=1.0) >1: speed-up, <1: slow-down
 	double realtime_factor_ = 1.0;
@@ -103,6 +103,8 @@ class MVSimNode
 	/// Default=true. Behaves as navigation/fake_localization for each
 	/// vehicle without the need to launch additional nodes.
 	bool do_fake_localization_ = true;
+
+	int publisher_history_len_ = 50;
 
 	//!< (Default=0.1) Time tolerance for published TFs
 	double transform_tolerance_ = 0.1;
@@ -185,6 +187,7 @@ class MVSimNode
 	/// Pubs/Subs for each vehicle. Initialized by initPubSubs(), called
 	/// from notifyROSWorldIsUpdated()
 	std::vector<TPubSubPerVehicle> pubsub_vehicles_;
+	std::mutex pubsub_vehicles_mtx_;
 
 	/** Initialize all pub/subs required for each vehicle, for the specific
 	 * vehicle \a veh */
@@ -197,7 +200,7 @@ class MVSimNode
 #if PACKAGE_ROS_VERSION == 1
 		const geometry_msgs::Twist::ConstPtr& cmd,
 #else
-		const geometry_msgs::msg::Twist::SharedPtr cmd,
+		const geometry_msgs::msg::Twist::ConstSharedPtr& cmd,
 #endif
 		mvsim::VehicleBase* veh);
 	// === End ROS Hooks====
@@ -294,5 +297,7 @@ class MVSimNode
 	void internalOn(
 		const mvsim::VehicleBase& veh,
 		const mrpt::obs::CObservationPointCloud& obs);
+	void internalOn(
+		const mvsim::VehicleBase& veh, const mrpt::obs::CObservationIMU& obs);
 
 };	// end class
