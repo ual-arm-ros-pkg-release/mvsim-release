@@ -25,6 +25,7 @@
 #include <mrpt/system/CTimeLogger.h>
 #include <mvsim/Block.h>
 #include <mvsim/Comms/Client.h>
+#include <mvsim/Joystick.h>
 #include <mvsim/RemoteResourcesManager.h>
 #include <mvsim/TParameterDefinitions.h>
 #include <mvsim/VehicleBase.h>
@@ -393,6 +394,12 @@ class World : public mrpt::system::COutputLogger
 		return userDefinedVariables_;
 	}
 
+	/** If joystick usage is enabled (via XML file option, for example),
+	 *  this will read the joystick state and return it. Otherwise (or on device
+	 * error or disconnection), a null optional variable is returned.
+	 */
+	std::optional<mvsim::TJoyStickEvent> getJoystickState() const;
+
    private:
 	friend class VehicleBase;
 	friend class Block;
@@ -402,7 +409,7 @@ class World : public mrpt::system::COutputLogger
 	std::vector<on_observation_callback_t> callbacksOnObservation_;
 
 	// -------- World Params ----------
-	/** Gravity acceleration (Default=9.8 m/s^2). Used to evaluate weights for
+	/** Gravity acceleration (Default=9.81 m/s^2). Used to evaluate weights for
 	 * friction, etc. */
 	double gravity_ = 9.81;
 
@@ -411,6 +418,9 @@ class World : public mrpt::system::COutputLogger
 	 * sample period.
 	 */
 	mutable double simulTimestep_ = 0;
+
+	mutable bool joystickEnabled_ = false;
+	mutable std::optional<Joystick> joystick_;
 
 	/** Velocity and position iteration count (refer to libbox2d docs) */
 	int b2dVelIters_ = 8, b2dPosIters_ = 3;
@@ -423,6 +433,7 @@ class World : public mrpt::system::COutputLogger
 		{"simul_timestep", {"%lf", &simulTimestep_}},
 		{"b2d_vel_iters", {"%i", &b2dVelIters_}},
 		{"b2d_pos_iters", {"%i", &b2dPosIters_}},
+		{"joystick_enabled", {"%bool", &joystickEnabled_}},
 	};
 
 	/** User-defined variables as defined via `<variable name='' value='' />`
@@ -508,13 +519,17 @@ class World : public mrpt::system::COutputLogger
 		double light_elevation = mrpt::DEG2RAD(70.0);
 
 		float light_clip_plane_min = 0.1f;
-		float light_clip_plane_max = 2000.0f;
+		float light_clip_plane_max = 900.0f;
 
 		float shadow_bias = 1e-5;
 		float shadow_bias_cam2frag = 1e-5;
 		float shadow_bias_normal = 1e-4;
 
 		mrpt::img::TColor light_color = {0xff, 0xff, 0xff, 0xff};
+		float light_ambient = 0.5f;
+
+		float eye_distance_to_shadow_map_extension = 2.0f;	//!< [m/m]
+		float minimum_shadow_map_extension_ratio = 0.005f;	//!< [0,1]
 
 		const TParameterDefinitions params = {
 			{"enable_shadows", {"%bool", &enable_shadows}},
@@ -527,6 +542,11 @@ class World : public mrpt::system::COutputLogger
 			{"shadow_bias", {"%f", &shadow_bias}},
 			{"shadow_bias_cam2frag", {"%f", &shadow_bias_cam2frag}},
 			{"shadow_bias_normal", {"%f", &shadow_bias_normal}},
+			{"light_ambient", {"%f", &light_ambient}},
+			{"eye_distance_to_shadow_map_extension",
+			 {"%f", &eye_distance_to_shadow_map_extension}},
+			{"minimum_shadow_map_extension_ratio",
+			 {"%f", &minimum_shadow_map_extension_ratio}},
 		};
 	};
 
