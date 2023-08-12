@@ -1,6 +1,8 @@
 <mvsim_world version="1.0">
 	<!-- General simulation options -->
 	<simul_timestep>0</simul_timestep> <!-- Simulation fixed-time interval for numerical integration [seconds] or 0 to autodetermine -->
+	
+	<joystick_enabled>true</joystick_enabled>
 
 	<!-- GUI options -->
 	<gui>
@@ -18,6 +20,8 @@
 		<enable_shadows>true</enable_shadows>
 		<light_azimuth_deg>60.0</light_azimuth_deg>
 		<light_elevation_deg>75.0</light_elevation_deg>
+		<!-- <eye_distance_to_shadow_map_extension>2</eye_distance_to_shadow_map_extension> -->
+		<!-- <minimum_shadow_map_extension_ratio>0.005</minimum_shadow_map_extension_ratio> -->
 	</lights>
 
 	<variable name="CEILING_HEIGHT" value="6.0"></variable>
