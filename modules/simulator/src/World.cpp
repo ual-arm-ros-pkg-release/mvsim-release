@@ -74,10 +74,12 @@ void World::internal_initialize()
 	ASSERT_(worldVisual_);
 
 #if MRPT_VERSION >= 0x270
-	worldVisual_->getViewport()->lightParameters().ambient = 0.5f;
+	worldVisual_->getViewport()->lightParameters().ambient =
+		lightOptions_.light_ambient;
 #else
 	worldVisual_->getViewport()->lightParameters().ambient = {
-		0.5f, 0.5f, 0.5f, 1.0f};
+		lightOptions_.light_ambient, lightOptions_.light_ambient,
+		lightOptions_.light_ambient, 1.0f};
 #endif
 	// Physical world light = visual world lights:
 	worldPhysical_.getViewport()->lightParameters() =
@@ -402,4 +404,39 @@ bool World::sensor_has_to_create_egl_context()
 	bool ret = first;
 	first = false;
 	return ret;
+}
+
+std::optional<mvsim::TJoyStickEvent> World::getJoystickState() const
+{
+	if (!joystickEnabled_) return {};
+
+	if (!joystick_)
+	{
+		joystick_.emplace();
+		const auto nJoy = joystick_->getJoysticksCount();
+		if (!nJoy)
+		{
+			MRPT_LOG_WARN(
+				"[World::getJoystickState()] No Joystick found, disabling "
+				"joystick-based controllers.");
+			joystickEnabled_ = false;
+			joystick_.reset();
+			return {};
+		}
+	}
+
+	mvsim::TJoyStickEvent js;
+
+	const int nJoy = 0;	 // TODO: Expose param for multiple joysticks?
+
+	joystick_->getJoystickPosition(nJoy, js.x, js.y, js.z, js.buttons);
+
+	if (js.z != 0 && gui_.gui_win)
+	{
+		auto lck = mrpt::lockHelper(gui_.gui_win->background_scene_mtx);
+		auto& cam = gui_.gui_win->camera();
+		cam.setAzimuthDegrees(cam.getAzimuthDegrees() - js.z);
+	}
+
+	return js;
 }
