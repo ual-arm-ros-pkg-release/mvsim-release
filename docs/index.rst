@@ -15,11 +15,15 @@ MVSim: a lightweight MultiVehicle Simulator
    first-steps
    architecture
    world
+   vehicles
+   sensors
+   demo_worlds
    teleoperation
    mvsim-cli
    mvsim_node
    physics
    extending
+   bibliography
    C++ API <doxygen/html/modules.html#http://>
 
 .. (JLBC note: Do not remove the #http:// above, it's the only way I found to allow that link to be included in the TOC).
