@@ -7,6 +7,7 @@
   |   See COPYING                                                           |
   +-------------------------------------------------------------------------+ */
 #include <mrpt/core/format.h>
+#include <mrpt/core/get_env.h>
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/system/filesystem.h>	 // extractFileDirectory()
 #include <mvsim/World.h>
@@ -38,9 +39,13 @@ void World::load_from_XML(
 	using namespace rapidxml;
 
 	// Extract base path of file:
-	basePath_ =
-		mrpt::system::trim(mrpt::system::extractFileDirectory(fileNameForPath));
+	basePath_ = mrpt::system::toAbsolutePath(
+		mrpt::system::extractFileDirectory(fileNameForPath),
+		false /*canonical*/);
 	// printf("[World] INFO: Using base path='%s'\n",basePath_.c_str());
+
+	// Special variables:
+	userDefinedVariables_["MVSIM_CURRENT_FILE_DIRECTORY"] = basePath_;
 
 	auto lck = mrpt::lockHelper(world_cs_);	 // Protect multithread access
 
@@ -127,6 +132,8 @@ void World::internal_recursive_parse_XML(const XmlParserContext& ctx)
 	// push relative directory state:
 	const auto savedBasePath = basePath_;
 	basePath_ = ctx.currentBasePath;
+	// Special variables:
+	userDefinedVariables_["MVSIM_CURRENT_FILE_DIRECTORY"] = basePath_;
 
 	// Known tag parser?
 	if (auto itParser = xmlParsers_.find(node->name());
@@ -148,6 +155,8 @@ void World::internal_recursive_parse_XML(const XmlParserContext& ctx)
 
 	// pop relative directory state:
 	basePath_ = savedBasePath;
+	// Special variables:
+	userDefinedVariables_["MVSIM_CURRENT_FILE_DIRECTORY"] = basePath_;
 }
 
 void World::parse_tag_element(const XmlParserContext& ctx)
@@ -182,7 +191,7 @@ void World::parse_tag_vehicle(const XmlParserContext& ctx)
 void World::parse_tag_vehicle_class(const XmlParserContext& ctx)
 {
 	// <vehicle:class> entries:
-	VehicleBase::register_vehicle_class(ctx.node);
+	VehicleBase::register_vehicle_class(*this, ctx.node);
 }
 
 void World::parse_tag_sensor(const XmlParserContext& ctx)
@@ -210,7 +219,7 @@ void World::parse_tag_block(const XmlParserContext& ctx)
 void World::parse_tag_block_class(const XmlParserContext& ctx)
 {
 	//
-	Block::register_block_class(ctx.node);
+	Block::register_block_class(*this, ctx.node);
 }
 
 void World::parse_tag_gui(const XmlParserContext& ctx)
@@ -244,6 +253,9 @@ void World::parse_tag_include(const XmlParserContext& ctx)
 	MRPT_LOG_DEBUG_STREAM("XML parser: including file: '" << absFile << "'");
 
 	std::map<std::string, std::string> vars;
+	// Inherit the user-defined variables from parent scope
+	vars = user_defined_variables();
+	// Plus new variables as XML attributes, local only:
 	for (auto attr = ctx.node->first_attribute(); attr;
 		 attr = attr->next_attribute())
 	{
@@ -255,8 +267,7 @@ void World::parse_tag_include(const XmlParserContext& ctx)
 	(void)xml;	// unused
 
 	// recursive parse:
-	const auto newBasePath =
-		mrpt::system::trim(mrpt::system::extractFileDirectory(absFile));
+	const auto newBasePath = mrpt::system::extractFileDirectory(absFile);
 	internal_recursive_parse_XML({root, newBasePath});
 }
 
@@ -275,6 +286,17 @@ void World::parse_tag_variable(const XmlParserContext& ctx)
 
 	const std::string finalValue =
 		mvsim::parse(valueAttr->value(), userDefinedVariables_);
+
+	thread_local const bool MVSIM_VERBOSE_PARSE =
+		mrpt::get_env<bool>("MVSIM_VERBOSE_PARSE", false);
+
+	if (MVSIM_VERBOSE_PARSE)
+	{
+		printf(
+			"[mvsim] Parsed <variable>: name='%s' value='%s' (original "
+			"expression='%s')\n",
+			name, finalValue.c_str(), valueAttr->value());
+	}
 
 	userDefinedVariables_[name] = finalValue;
 }
@@ -320,7 +342,19 @@ void World::parse_tag_for(const XmlParserContext& ctx)
 
 void World::parse_tag_if(const XmlParserContext& ctx)
 {
-	auto varCond = ctx.node->first_attribute("condition");
+	bool isTrue = evaluate_tag_if(*ctx.node);
+	if (!isTrue) return;
+
+	for (auto childNode = ctx.node->first_node(); childNode;
+		 childNode = childNode->next_sibling())
+	{
+		internal_recursive_parse_XML({childNode, basePath_});
+	}
+}
+
+bool World::evaluate_tag_if(const rapidxml::xml_node<char>& node) const
+{
+	auto varCond = node.first_attribute("condition");
 	ASSERTMSG_(
 		varCond, "XML tag '<if />' must have a 'condition=\"xxx\"' attribute)");
 	const auto str = mvsim::parse(varCond->value(), userDefinedVariables_);
@@ -336,11 +370,5 @@ void World::parse_tag_if(const XmlParserContext& ctx)
 				  str == "TRUE" || str == "on" || str == "ON" || str == "On" ||
 				  (intVal.has_value() && intVal.value() != 0);
 
-	if (!isTrue) return;
-
-	for (auto childNode = ctx.node->first_node(); childNode;
-		 childNode = childNode->next_sibling())
-	{
-		internal_recursive_parse_XML({childNode, basePath_});
-	}
+	return isTrue;
 }
