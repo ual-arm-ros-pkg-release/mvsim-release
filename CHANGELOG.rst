@@ -2,9 +2,17 @@
 Changelog for package mvsim
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.8.1 (2023-09-07)
+------------------
+* Move the rawlog-generation option to the World global options instead of sensor-wise.
+* Create CITATION.cff
+* helios 32fov70 sensor.xml: Fix missing MVSIM_CURRENT_FILE_DIRECTORY tag
+* Fix crash in edge case with world file path in the current directory
+* Contributors: Jose Luis Blanco-Claraco
+
 0.8.0 (2023-09-02)
 ------------------
-* Recursive `<include>`s are now possible.
+* Recursive "include"s are now possible.
 * All vehicle and sensor definitions are now exposed in public directory 'definitions' and are safe to be included from user worlds
 * ROS warehouse demos: fix wrong camera topicn ame in rviz
 * Add missing ROS 2 launch demo for greenhouse world
