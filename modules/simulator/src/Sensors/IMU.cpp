@@ -17,7 +17,7 @@
 #include "xml_utils.h"
 
 #if defined(MVSIM_HAS_ZMQ) && defined(MVSIM_HAS_PROTOBUF)
-#include <mvsim/mvsim-msgs/ObservationLidar2D.pb.h>
+// #include <mvsim/mvsim-msgs/ObservationXXX.pb.h>
 #endif
 
 using namespace mvsim;
@@ -70,10 +70,11 @@ void IMU::internalGuiUpdate(
 		SensorBase::RegisterSensorOriginViz(gl_sensor_origin_);
 	}
 
-	const mrpt::poses::CPose2D& p = vehicle_.getCPose2D();
+	const mrpt::poses::CPose3D p = vehicle_.getCPose3D() + obs_model_.sensorPose;
+	const auto pp = parent()->applyWorldRenderOffset(p);
 
-	if (gl_sensor_origin_) gl_sensor_origin_->setPose(p);
-	if (glCustomVisual_) glCustomVisual_->setPose(p + obs_model_.sensorPose);
+	if (gl_sensor_origin_) gl_sensor_origin_->setPose(pp);
+	if (glCustomVisual_) glCustomVisual_->setPose(pp);
 }
 
 void IMU::simul_pre_timestep([[maybe_unused]] const TSimulContext& context) {}
@@ -97,7 +98,7 @@ void IMU::internal_simulate_imu(const TSimulContext& context)
 {
 	using mrpt::obs::CObservationIMU;
 
-	auto tle = mrpt::system::CTimeLoggerEntry(world_->getTimeLogger(), "IMU");
+	auto tle = mrpt::system::CTimeLoggerEntry(world_->getTimeLogger(), "sensor.IMU");
 
 	auto outObs = CObservationIMU::Create(obs_model_);
 

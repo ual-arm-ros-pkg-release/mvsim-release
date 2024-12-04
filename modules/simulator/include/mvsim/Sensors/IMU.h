@@ -18,9 +18,8 @@
 
 namespace mvsim
 {
-/**
- * @brief An Inertial Measurement Unit (IMU) sensor.
- *
+/** An Inertial Measurement Unit (IMU) sensor.
+ * \ingroup sensors_module
  */
 class IMU : public SensorBase
 {
@@ -45,11 +44,12 @@ class IMU : public SensorBase
 
 	void notifySimulableSetPose(const mrpt::math::TPose3D& newPose) override;
 
-	mrpt::math::TPose3D getRelativePose() const override { return {}; }
-	void setRelativePose(const mrpt::math::TPose3D&) override
+	mrpt::math::TPose3D getRelativePose() const override { return obs_model_.sensorPose.asTPose(); }
+	void setRelativePose(const mrpt::math::TPose3D& p) override
 	{
-		// sensor_params_.setSensorPose(mrpt::poses::CPose3D(p));
+		obs_model_.sensorPose = mrpt::poses::CPose3D(p);
 	}
+
 	void internal_simulate_imu(const TSimulContext& context);
 
 	double angularVelocityStdNoise_ = 2e-4;	 //!< [rad/s]
