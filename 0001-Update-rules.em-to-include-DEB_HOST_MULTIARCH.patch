@@ -1,8 +1,9 @@
-From d97bb484d407ba6f9f15552905e76e7bdc797800 Mon Sep 17 00:00:00 2001
+From 679cb7ca524265057d61c5dbc641e7d9e1352468 Mon Sep 17 00:00:00 2001
 From: Jose Luis Blanco-Claraco <joseluisblancoc@gmail.com>
 Date: Sun, 1 Sep 2024 22:15:53 +0200
 Subject: [PATCH] Update rules.em to include DEB_HOST_MULTIARCH
 
+Signed-off-by: Jose Luis Blanco-Claraco <joseluisblancoc@gmail.com>
 ---
  debian/rules.em | 3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)
