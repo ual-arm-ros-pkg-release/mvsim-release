@@ -11,6 +11,7 @@
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/system/filesystem.h>	 // extractFileDirectory()
+#include <mrpt/topography/conversions.h>
 #include <mvsim/World.h>
 
 #include <algorithm>  // count()
@@ -232,6 +233,25 @@ void World::parse_tag_lights(const XmlParserContext& ctx)
 void World::parse_tag_georeference(const XmlParserContext& ctx)
 {
 	georeferenceOptions_.parse_from(*ctx.node, *this);
+
+	// handle UTM:
+	auto& g = georeferenceOptions_;
+
+	if (g.world_is_utm)
+	{
+		ASSERTMSG_(
+			g.world_to_enu_rotation == 0,
+			"Cannot define both, <world_to_enu_rotation> and <world_is_utm>");
+
+		ASSERTMSG_(
+			!g.georefCoord.isClear(),
+			"<world_is_utm> requires defining a valid reference geodetic coordinates too.");
+
+		mrpt::topography::GeodeticToUTM(g.georefCoord, g.utmRef, g.utm_zone, g.utm_band);
+
+		MRPT_LOG_INFO_STREAM(
+			"Using UTM georeference: utm_zone=" << g.utm_zone << " geoRef: utmRef=" << g.utmRef);
+	}
 }
 
 void World::parse_tag_walls(const XmlParserContext& ctx) { process_load_walls(*ctx.node); }
