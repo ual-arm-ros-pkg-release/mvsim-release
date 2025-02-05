@@ -1,4 +1,4 @@
-From 9184e44eb443e4170306abeb3c90e7dea5149788 Mon Sep 17 00:00:00 2001
+From 64e75b993450865fcd131cd4c65f30a3af16b1c2 Mon Sep 17 00:00:00 2001
 From: Jose Luis Blanco-Claraco <joseluisblancoc@gmail.com>
 Date: Sun, 1 Sep 2024 22:15:53 +0200
 Subject: [PATCH] Update rules.em to include DEB_HOST_MULTIARCH
